@@ -1,0 +1,16 @@
+{
+  "codeowners": [
+    "@your-github-handle"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend"
+  ],
+  "documentation": "https://github.com/your-org/relaytv",
+  "domain": "relaytv",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/your-org/relaytv/issues",
+  "name": "RelayTV",
+  "requirements": [],
+  "version": "0.3.6"
+}

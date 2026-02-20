@@ -1,0 +1,30 @@
+{
+  "title": "RelayTV Panel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to RelayTV",
+        "description": "Enter the base URL where RelayTV is reachable from Home Assistant (example: http://relaytv-host:8787).",
+        "data": {
+          "base_url": "RelayTV base URL"
+        }
+      }
+    },
+    "error": {
+      "missing_base_url": "Please enter a RelayTV base URL."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Panel options",
+        "description": "Customize how the RelayTV panel appears in the Home Assistant sidebar.",
+        "data": {
+          "panel_title": "Sidebar title",
+          "panel_icon": "Sidebar icon (MDI)",
+          "panel_path": "Sidebar path (URL slug)"
+        }
+      }
+    }
+  }
+}
