@@ -1,13 +1,35 @@
-# Byte-compiled / optimized / DLL files
+# Python / Byte-compiled
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Environments
-.venv/
+*.so
+.Python
 env/
 venv/
-ENV/
+.venv/
 
-# OS files
+# Home Assistant specific
+*.db
+*.db-shm
+*.db-wal
+*.log
+.storage/
+.cloud/
+secrets.yaml
+
+# Archives and Patches
+*.zip
+*.tar
+*.gz
+*.patch
+*.diff
+
+# Editor / IDE (VS Code, etc.)
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific
 .DS_Store
+Thumbs.db
