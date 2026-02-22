@@ -5,8 +5,7 @@ This integration:
 2) Exposes a RelayTV media_player entity backed by RelayTV's local HTTP API.
 3) Provides services (e.g., relaytv.smart_url) for automations and mobile share flows.
 
-The API layer is implemented defensively with endpoint fallbacks so it can be
-adapted to RelayTV deployments that may differ slightly.
+The API layer targets RelayTV's canonical endpoints (see RelayTV server docs/API.md).
 """
 
 from __future__ import annotations
@@ -94,47 +93,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not url:
             return
         await api.smart_url(url)
+        await coordinator.async_request_refresh()
 
     async def _handle_play_now(call):
+        """Play a URL immediately (maps to RelayTV POST /play).
+
+        Note: RelayTV /play clears the queue.
+        """
         url = (call.data.get("url") or "").strip()
         if not url:
             return
-        preserve_current = call.data.get("preserve_current", True)
-        reason = call.data.get("reason")
-        await api.play_now(url=url, preserve_current=preserve_current, reason=reason)
+        use_ytdlp = call.data.get("use_ytdlp")
+        cec = call.data.get("cec")
+        await api.play(url=url, use_ytdlp=use_ytdlp, cec=cec)
         await coordinator.async_request_refresh()
 
     async def _handle_announce(call):
-        url = (call.data.get("url") or "").strip()
-        if not url:
-            return
-        preserve_current = call.data.get("preserve_current", True)
-        await api.play_now(url=url, preserve_current=preserve_current, reason="announcement")
-        await coordinator.async_request_refresh()
+        # RelayTV doesn't have a distinct "announce" mode; alias to play_now.
+        await _handle_play_now(call)
 
     # Register services once (first config entry wins).
     if not hass.services.has_service(DOMAIN, SERVICE_SMART_URL):
         hass.services.async_register(DOMAIN, SERVICE_SMART_URL, _handle_smart_url)
-
-    async def _handle_play_now(call):
-        url = call.data.get("url") or ""
-        preserve_current = call.data.get("preserve_current", True)
-        reason = call.data.get("reason")
-        title = call.data.get("title")
-        thumbnail = call.data.get("thumbnail")
-        if not url:
-            return
-        await api.play_now(url=url, preserve_current=preserve_current, reason=reason, title=title, thumbnail=thumbnail)
-        await coordinator.async_request_refresh()
-
-    async def _handle_announce(call):
-        url = call.data.get("url") or ""
-        preserve_current = call.data.get("preserve_current", True)
-        if not url:
-            return
-        await api.play_now(url=url, preserve_current=preserve_current, reason="announcement")
-        await coordinator.async_request_refresh()
-
     if not hass.services.has_service(DOMAIN, SERVICE_PLAY_NOW):
         hass.services.async_register(DOMAIN, SERVICE_PLAY_NOW, _handle_play_now)
     if not hass.services.has_service(DOMAIN, SERVICE_ANNOUNCE):

@@ -33,3 +33,7 @@ secrets.yaml
 # OS specific
 .DS_Store
 Thumbs.db
+
+#Build Tools
+build-release.sh
+VERSION

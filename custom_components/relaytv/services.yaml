@@ -1,6 +1,6 @@
 smart_url:
   name: Smart play URL
-  description: Resolve and play a shared URL in RelayTV (mobile share flow).
+  description: Resolve and play a shared URL in RelayTV (RelayTV POST /smart).
   fields:
     url:
       required: true
@@ -9,36 +9,41 @@ smart_url:
         text:
 
 play_now:
-  name: Play now (interrupt)
-  description: Play a URL immediately and (optionally) preserve whatever is currently playing to the front of the queue.
+  name: Play now
+  description: Play a URL immediately (RelayTV POST /play). This clears the queue.
   fields:
     url:
       required: true
       example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
       selector:
         text:
-    preserve_current:
+    use_ytdlp:
       required: false
       default: true
       selector:
         boolean:
-    reason:
+    cec:
       required: false
-      example: "announcement"
+      default: false
       selector:
-        text:
+        boolean:
 
 announce:
-  name: Announce (interrupt)
-  description: Convenience wrapper for play_now with reason=announcement.
+  name: Announce
+  description: Alias for play_now. (RelayTV does not currently implement a distinct announcement mode.)
   fields:
     url:
       required: true
       example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
       selector:
         text:
-    preserve_current:
+    use_ytdlp:
       required: false
       default: true
+      selector:
+        boolean:
+    cec:
+      required: false
+      default: false
       selector:
         boolean:

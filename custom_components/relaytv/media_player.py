@@ -63,7 +63,7 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
     if not isinstance(data, dict):
         return _StatusView()
 
-    # Common keys (based on similar local-player APIs)
+    # Common keys (based on RelayTV docs/API.md)
     playing = bool(data.get("playing") or data.get("is_playing") or data.get("play"))
     paused = bool(data.get("paused") or data.get("is_paused") or data.get("pause"))
 
@@ -90,10 +90,24 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
     title = title or data.get("title")
     url = url or data.get("url")
 
+    # Prefer locally cached thumbnails when present (RelayTV serves /thumbs/<id>.jpg)
     thumb = None
     if isinstance(np, dict):
-        thumb = np.get("thumbnail") or np.get("thumb") or np.get("image") or np.get("art") or np.get("poster")
-    thumb = thumb or data.get("thumbnail") or data.get("image") or data.get("art")
+        thumb = (
+            np.get("thumbnail_local")
+            or np.get("thumbnail")
+            or np.get("thumb")
+            or np.get("image")
+            or np.get("art")
+            or np.get("poster")
+        )
+    thumb = (
+        thumb
+        or data.get("thumbnail_local")
+        or data.get("thumbnail")
+        or data.get("image")
+        or data.get("art")
+    )
 
     return _StatusView(
         playing=playing,
@@ -139,7 +153,6 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             | MediaPlayerEntityFeature.PREVIOUS_TRACK
             | MediaPlayerEntityFeature.SEEK
             | MediaPlayerEntityFeature.VOLUME_SET
-            | MediaPlayerEntityFeature.VOLUME_MUTE
             | MediaPlayerEntityFeature.TURN_ON
             | MediaPlayerEntityFeature.TURN_OFF
         )
@@ -176,7 +189,8 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def is_volume_muted(self) -> Optional[bool]:
-        return _parse_status(self.coordinator.data).muted
+        # RelayTV doesn't currently expose mute as a dedicated API.
+        return None
 
     @property
     def media_title(self) -> Optional[str]:
@@ -205,25 +219,30 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if t.tzinfo is None:
             return t.replace(tzinfo=timezone.utc)
         return t
+
     @property
     def entity_picture(self) -> Optional[str]:
         v = _parse_status(self.coordinator.data)
         return _abs_url(self._entry.data.get("base_url", ""), v.thumbnail)
 
     async def async_media_play(self) -> None:
-        await self._api.command("play")
+        # RelayTV provides /playback/play with "TV remote" semantics:
+        # - toggle pause if playing
+        # - resume closed session if available
+        # - else play next in queue
+        await self._api.playback_play()
         await self.coordinator.async_request_refresh()
 
     async def async_media_pause(self) -> None:
-        await self._api.command("pause")
+        await self._api.pause()
         await self.coordinator.async_request_refresh()
 
     async def async_media_stop(self) -> None:
-        await self._api.command("stop")
+        await self._api.stop()
         await self.coordinator.async_request_refresh()
 
     async def async_media_next_track(self) -> None:
-        await self._api.command("next")
+        await self._api.next()
         await self.coordinator.async_request_refresh()
 
     async def async_media_previous_track(self) -> None:
@@ -235,21 +254,19 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
-        await self._api.command("mute", value=bool(mute))
-        await self.coordinator.async_request_refresh()
-
+        # Not supported by RelayTV API at this time.
+        return
 
     async def async_turn_on(self) -> None:
-        # Power-on maps to RelayTV's preferred play semantics (/playback/play):
-        # unpause if playing, resume closed session, or start next queued item.
+        # Same behavior as PLAY.
         await self._api.playback_play()
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
-        # Map power-off to RelayTV close/quit behavior.
-        await self._api.command("close")
+        # Treat "turn off" as stop playback.
+        await self._api.stop()
         await self.coordinator.async_request_refresh()
 
     async def async_media_seek(self, position: float) -> None:
-        await self._api.command("seek", value=float(position))
+        await self._api.seek_abs(float(position))
         await self.coordinator.async_request_refresh()
