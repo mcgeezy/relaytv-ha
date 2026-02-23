@@ -1,53 +1,326 @@
-# RelayTV Panel (Home Assistant)
+# RelayTV – Home Assistant Integration
 
-A minimal Home Assistant integration that adds a **RelayTV** sidebar panel (iframe) pointing at your RelayTV instance.
+RelayTV transforms Home Assistant into a **programmable local media automation engine**.
 
-- **Domain:** `relaytv`
-- **Type:** Sidebar panel (iframe)
-- **Entities:** None (RelayTV remains the control surface)
+It exposes your RelayTV server as a `media_player` (plus services), supports queue-based playback, and makes it easy to drive **local HDMI playback** from automations (doorbells, sensors, schedules, scenes, and AI).
 
-## Install via HACS (Custom Repository)
+> Tip: The YAML below uses the `relaytv.*` service names as examples. If your integration exposes slightly different names/fields, keep the **automation patterns** and adjust the service calls accordingly.
 
-1. In Home Assistant, go to **HACS → Integrations**
-2. Open the menu (⋮) → **Custom repositories**
-3. Add this repository URL, category **Integration**
-4. Install **RelayTV Panel**
-5. Restart Home Assistant
-6. Add the integration: **Settings → Devices & Services → Add Integration → RelayTV Panel**
-7. Enter your RelayTV base URL (example: `http://relaytv-host:8787`)
+---
 
-## Manual Install
+# 🚀 What RelayTV Enables Today
 
+## 🎬 Media Player Control
+- `media_player` entity support
+- Play / pause / stop / seek / volume
+- Queue management
+- Resume playback support (where implemented)
+- Local HDMI playback
+- yt-dlp powered “smart URL” stream resolution
+
+---
+
+# 🔵 Practical Automation Use Cases (Available Now)
+
+- 🚪 Doorbell / camera pop on the TV
+- ⏰ Morning video alarm clock
+- 🌙 Bedtime routines (relaxing queue + auto stop)
+- 🏠 Home/Away/Movie mode scenes that change what’s on screen
+- 📺 Queue-based “experiences” (workouts, parties, timers, intros)
+
+---
+
+# 🟢 Creative & Fun Automation Ideas
+
+- 👻 Late-night motion jump scares
+- 🧟 Halloween mode (seasonal triggers + ambient loops)
+- 🐶 Dog cam on bark detection
+- 🎉 Birthday surprise mode
+- 🎮 Easter-egg triggers (sensor patterns launch hidden clips)
+
+---
+
+# 🔴 Advanced Home Automation Scenarios
+
+- 🤖 AI-powered announcements (TTS + relevant clip)
+- 🌧 Weather-based media (radar, warnings, checklist videos)
+- 📈 Energy monitoring visualizations (play alert/graph clip)
+- 🛡 “Command center” camera rotation on alarm events
+- 📰 AI daily digest queue (headlines + summaries)
+
+---
+
+# 🧠 Core Services (Examples)
+
+| Service | Description |
+|--------|-------------|
+| `relaytv.play_now` | Immediately plays a URL |
+| `relaytv.enqueue` | Adds URL to queue |
+| `relaytv.smart_url` | Resolves URL via yt-dlp (when applicable) |
+| `relaytv.clear_queue` | Clears current queue |
+| `relaytv.seek` | Seek to a time position |
+| `relaytv.volume_set` | Adjust volume |
+
+---
+
+# ✅ Automation Examples (YAML)
+
+## 1) Doorbell → Show Front Door Camera (RTSP)
+
+```yaml
+alias: RelayTV - Doorbell Camera Pop
+mode: single
+trigger:
+  - platform: state
+    entity_id: binary_sensor.front_door_ding
+    to: "on"
+action:
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "rtsp://user:pass@10.0.55.10:554/stream1"
+  - service: relaytv.volume_set
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      volume_level: 0.55
+```
+
+## 2) Morning Video Alarm Clock (Playlist + Lights)
+
+```yaml
+alias: RelayTV - Morning Video Alarm
+mode: single
+trigger:
+  - platform: time
+    at: "06:45:00"
+condition:
+  - condition: state
+    entity_id: person.mark
+    state: "home"
+action:
+  - service: light.turn_on
+    target:
+      entity_id: light.bedroom
+    data:
+      brightness_pct: 10
+  - delay: "00:00:05"
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_bedroom
+    data:
+      url: "https://www.youtube.com/playlist?list=YOUR_PLAYLIST_ID"
+  - service: relaytv.volume_set
+    target:
+      entity_id: media_player.relaytv_bedroom
+    data:
+      volume_level: 0.25
+  - delay: "00:05:00"
+  - service: light.turn_on
+    target:
+      entity_id: light.bedroom
+    data:
+      brightness_pct: 45
+```
+
+## 3) Late-Night Motion → Jump Scare (Fun Mode)
+
+```yaml
+alias: RelayTV - Late Night Jump Scare
+mode: single
+trigger:
+  - platform: state
+    entity_id: binary_sensor.hall_motion
+    to: "on"
+condition:
+  - condition: time
+    after: "01:00:00"
+    before: "04:00:00"
+action:
+  - service: relaytv.volume_set
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      volume_level: 0.85
+  - service: light.turn_on
+    target:
+      entity_id: light.hallway
+    data:
+      brightness_pct: 100
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "https://www.youtube.com/watch?v=YOUR_JUMPSCARE_CLIP"
+  - delay: "00:00:12"
+  - service: light.turn_off
+    target:
+      entity_id: light.hallway
+```
+
+## 4) Alarm Trigger → “Command Center” Camera Rotation (Queue)
+
+```yaml
+alias: RelayTV - Alarm Command Center
+mode: restart
+trigger:
+  - platform: state
+    entity_id: alarm_control_panel.house
+    to: "triggered"
+action:
+  - service: relaytv.clear_queue
+    target:
+      entity_id: media_player.relaytv_living_room
+  - service: relaytv.enqueue
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "rtsp://user:pass@10.0.55.10:554/front"
+  - service: relaytv.enqueue
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "rtsp://user:pass@10.0.55.10:554/driveway"
+  - service: relaytv.enqueue
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "rtsp://user:pass@10.0.55.10:554/backyard"
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "rtsp://user:pass@10.0.55.10:554/front"
+```
+
+## 5) Party Mode Script (Intro Clip + Playlist)
+
+Create this as a **Script** in HA (Settings → Automations & Scenes → Scripts).
+
+```yaml
+party_mode_relaytv:
+  alias: Party Mode (RelayTV)
+  mode: single
+  sequence:
+    - service: relaytv.clear_queue
+      target:
+        entity_id: media_player.relaytv_living_room
+    - service: relaytv.enqueue
+      target:
+        entity_id: media_player.relaytv_living_room
+      data:
+        url: "https://www.youtube.com/watch?v=YOUR_INTRO_CLIP"
+    - service: relaytv.enqueue
+      target:
+        entity_id: media_player.relaytv_living_room
+      data:
+        url: "https://www.youtube.com/playlist?list=YOUR_PARTY_PLAYLIST"
+    - service: relaytv.volume_set
+      target:
+        entity_id: media_player.relaytv_living_room
+      data:
+        volume_level: 0.65
+    - service: relaytv.play_now
+      target:
+        entity_id: media_player.relaytv_living_room
+      data:
+        url: "https://www.youtube.com/watch?v=YOUR_INTRO_CLIP"
+```
+
+## 6) “AI Announcement” Pattern (TTS + Video)
+
+This example uses HA TTS to speak, then plays a related clip.
+(You can swap TTS for Assist, Piper, cloud TTS, etc.)
+
+```yaml
+alias: RelayTV - AI Announcement Pattern
+mode: single
+trigger:
+  - platform: state
+    entity_id: binary_sensor.garage_door_open_too_long
+    to: "on"
+action:
+  - service: tts.speak
+    data:
+      media_player_entity_id: media_player.kitchen_speaker
+      message: "Garage door has been open for a while."
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "https://www.youtube.com/watch?v=YOUR_ALERT_CLIP"
+```
+
+## 7) Energy Spike → Alert Clip + Reduce Loads
+
+```yaml
+alias: RelayTV - Energy Spike Alert
+mode: single
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.home_power_kw
+    above: 8.0
+    for: "00:02:00"
+action:
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "https://www.youtube.com/watch?v=YOUR_POWER_ALERT_CLIP"
+  - service: switch.turn_off
+    target:
+      entity_id:
+        - switch.space_heater
+        - switch.shop_fan
+```
+
+---
+
+# 🛣 Roadmap (Future Capabilities)
+
+## 🔔 Interrupt + Resume Service
+Temporarily interrupt playback for alerts, then auto-resume prior content.
+
+## 🪟 Overlay Mode
+Display notification banners without stopping playback.
+
+## 🔄 Multi-Screen Sync
+Synchronize playback across multiple RelayTV servers (perfect for whole-home announcements).
+
+## 🖼 Snapshot Previews
+Capture/preview before switching content (helps with camera pops).
+
+## 🎛 Sensor → Stream Mapping UI
+Map motion/doorbell sensors to streams directly in the integration options UI (no YAML required).
+
+## 🧠 AI Clip Generator
+Generate short clips (image + TTS + theme) for alerts, seasons, and events.
+
+## 📢 Smart Alert Replacement
+Insert custom “house announcements” during downtime or between queued items.
+
+---
+
+# 📦 Installation
+
+## HACS
+1. Add as Custom Repository (Integration)
+2. Install
+3. Restart Home Assistant
+4. Add Integration
+5. Configure server address
+
+## Manual
 Copy `custom_components/relaytv` into:
 
-```
+```text
 /config/custom_components/relaytv
 ```
 
-Restart Home Assistant, then add the integration from the UI.
+Restart Home Assistant.
 
-## Configuration
+---
 
-During setup you provide:
-
-- **RelayTV base URL** (required)
-
-Options allow:
-
-- Sidebar title
-- Sidebar icon (MDI)
-- Sidebar path (URL slug)
-
-## Notes
-
-- This integration does **not** create a `media_player` entity.
-- It embeds the RelayTV UI at `/ui` via iframe.
-
-## Versioning
-
-This repo uses semantic versioning.
-Current version: **v0.1.0**
-
-## License
-
+# 🔐 License
 TBD

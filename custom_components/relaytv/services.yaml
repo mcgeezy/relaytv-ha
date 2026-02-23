@@ -1,6 +1,12 @@
 smart_url:
   name: Smart play URL
   description: Resolve and play a shared URL in RelayTV (RelayTV POST /smart).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
   fields:
     url:
       required: true
@@ -11,6 +17,12 @@ smart_url:
 play_now:
   name: Play now
   description: Play a URL immediately (RelayTV POST /play). This clears the queue.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
   fields:
     url:
       required: true
@@ -31,6 +43,12 @@ play_now:
 announce:
   name: Announce
   description: Alias for play_now. (RelayTV does not currently implement a distinct announcement mode.)
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
   fields:
     url:
       required: true

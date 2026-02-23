@@ -2,21 +2,41 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_BASE_URL,
-    CONF_PANEL_ICON,
-    CONF_PANEL_PATH,
-    CONF_PANEL_TITLE,
-    DEFAULT_PANEL_ICON,
-    DEFAULT_PANEL_PATH,
+    CONF_PANEL_ENABLED,
+    CONF_PANEL_TARGET_ENTRY_ID,
+    CONF_SERVER_NAME,
+    DATA_PANEL_SETTINGS,
+    DATA_STORE,
     DEFAULT_PANEL_TITLE,
     DOMAIN,
 )
+
+
+def _normalize_base_url(raw: str) -> str:
+    """Normalize user input into a URL safe for iframe embedding."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = f"http://{raw}"
+    parsed = urlparse(raw)
+    if not parsed.netloc:
+        return raw
+    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+    if parsed.query:
+        normalized += f"?{parsed.query}"
+    return normalized
 
 
 class RelayTVWebUIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -28,18 +48,24 @@ class RelayTVWebUIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            base_url = (user_input.get(CONF_BASE_URL) or "").strip()
+            base_url = _normalize_base_url(user_input.get(CONF_BASE_URL, ""))
+            name = (user_input.get(CONF_SERVER_NAME) or "").strip()
             if not base_url:
                 errors["base"] = "missing_base_url"
+            elif not name:
+                errors["base"] = "missing_name"
             else:
-                # Single instance is usually sufficient; users can duplicate by cloning the folder/domain if needed.
-                await self.async_set_unique_id(DOMAIN)
+                await self.async_set_unique_id(base_url)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=DEFAULT_PANEL_TITLE, data={CONF_BASE_URL: base_url})
+                return self.async_create_entry(
+                    title=name,
+                    data={CONF_BASE_URL: base_url, CONF_NAME: name},
+                )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_BASE_URL): str,
+                vol.Required(CONF_BASE_URL, default="http://localhost:8787"): str,
+                vol.Required(CONF_SERVER_NAME, default=DEFAULT_PANEL_TITLE): str,
             }
         )
 
@@ -55,29 +81,44 @@ class RelayTVWebUIOptionsFlow(config_entries.OptionsFlow):
     """Handle options for RelayTV Web UI panel."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        # NOTE: In modern Home Assistant, OptionsFlow exposes a read-only
-        # `config_entry` property, so we cannot assign to it.
-        # Store it on a private attribute instead.
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
+        settings_store = Store(self.hass, 1, f"{DOMAIN}_panel_settings")
+        settings = await settings_store.async_load() or {}
+
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        choices = {entry.entry_id: entry.title for entry in entries}
+
+        current_target = settings.get(CONF_PANEL_TARGET_ENTRY_ID)
+        if current_target not in choices and choices:
+            current_target = entries[-1].entry_id
+
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            chosen_target = user_input.get(CONF_PANEL_TARGET_ENTRY_ID)
+            if chosen_target not in choices and choices:
+                chosen_target = entries[-1].entry_id
+
+            updated = {
+                CONF_PANEL_ENABLED: bool(user_input.get(CONF_PANEL_ENABLED, True)),
+                CONF_PANEL_TARGET_ENTRY_ID: chosen_target,
+            }
+            await settings_store.async_save(updated)
+            self.hass.data.setdefault(DOMAIN, {})[DATA_STORE] = settings_store
+            self.hass.data[DOMAIN][DATA_PANEL_SETTINGS] = updated
+            await self.hass.config_entries.async_reload(self._config_entry.entry_id)
+            return self.async_create_entry(title="", data={})
 
         schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_PANEL_TITLE,
-                    default=self._config_entry.options.get(CONF_PANEL_TITLE, DEFAULT_PANEL_TITLE),
-                ): str,
-                vol.Optional(
-                    CONF_PANEL_ICON,
-                    default=self._config_entry.options.get(CONF_PANEL_ICON, DEFAULT_PANEL_ICON),
-                ): str,
-                vol.Optional(
-                    CONF_PANEL_PATH,
-                    default=self._config_entry.options.get(CONF_PANEL_PATH, DEFAULT_PANEL_PATH),
-                ): str,
+                vol.Required(
+                    CONF_PANEL_ENABLED,
+                    default=settings.get(CONF_PANEL_ENABLED, True),
+                ): bool,
+                vol.Required(
+                    CONF_PANEL_TARGET_ENTRY_ID,
+                    default=current_target,
+                ): vol.In(choices),
             }
         )
 
