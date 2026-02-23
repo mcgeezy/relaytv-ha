@@ -20,6 +20,24 @@ It exposes your RelayTV server as a `media_player` (plus services), supports que
 
 ---
 
+# ⭐ Key Mobile UX Feature: “Share to Home Assistant” → Play / Enqueue
+
+One of the best day-to-day workflows is using your phone like a “remote link picker”:
+
+1. On iOS/Android, **share a link** (YouTube, Twitch, a direct stream URL, etc.)
+2. Choose **Home Assistant** from the share sheet
+3. Home Assistant fires an event (`mobile_app.share`) containing the shared `url` or `text`
+4. An automation can then **play now** or **enqueue** on RelayTV
+
+This feels *incredible* in practice: you browse normally on your phone, tap Share, and your TV starts playing.
+
+> Pro tip: Use the HA UI automation editor to duplicate this automation into variants:
+> - “Share → Play Now (Living Room)"
+> - “Share → Enqueue (Bedroom)"
+> - “Share → Ask which TV” (roadmap: actionable notification picker)
+
+---
+
 # 🔵 Practical Automation Use Cases (Available Now)
 
 - 🚪 Doorbell / camera pop on the TV
@@ -27,6 +45,7 @@ It exposes your RelayTV server as a `media_player` (plus services), supports que
 - 🌙 Bedtime routines (relaxing queue + auto stop)
 - 🏠 Home/Away/Movie mode scenes that change what’s on screen
 - 📺 Queue-based “experiences” (workouts, parties, timers, intros)
+- 📲 **Mobile Share → Play/Enqueue** from iOS/Android browsing (see below)
 
 ---
 
@@ -64,6 +83,67 @@ It exposes your RelayTV server as a `media_player` (plus services), supports que
 ---
 
 # ✅ Automation Examples (YAML)
+
+## 0) Drop-in: Share to Home Assistant → Play Now (Mobile)
+
+**What it does:** When you share a link to the Home Assistant app, this plays it immediately on RelayTV.
+
+- Trigger: `mobile_app.share`
+- Uses: `trigger.event.data.url` (preferred) or `trigger.event.data.text`
+
+```yaml
+alias: RelayTV - Mobile Share -> Play Now
+mode: queued
+trigger:
+  - platform: event
+    event_type: mobile_app.share
+action:
+  - variables:
+      shared_url: >-
+        {{ trigger.event.data.url
+           if trigger.event.data.url is defined
+           else (trigger.event.data.text if trigger.event.data.text is defined else '') }}
+  - condition: template
+    value_template: "{{ shared_url | length > 0 }}"
+  - service: relaytv.play_now
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "{{ shared_url }}"
+  - service: notify.notify
+    data:
+      title: "RelayTV"
+      message: "Playing: {{ shared_url }}"
+```
+
+### Variant: Mobile Share → Enqueue Instead of Play Now
+
+```yaml
+alias: RelayTV - Mobile Share -> Enqueue
+mode: queued
+trigger:
+  - platform: event
+    event_type: mobile_app.share
+action:
+  - variables:
+      shared_url: >-
+        {{ trigger.event.data.url
+           if trigger.event.data.url is defined
+           else (trigger.event.data.text if trigger.event.data.text is defined else '') }}
+  - condition: template
+    value_template: "{{ shared_url | length > 0 }}"
+  - service: relaytv.enqueue
+    target:
+      entity_id: media_player.relaytv_living_room
+    data:
+      url: "{{ shared_url }}"
+  - service: notify.notify
+    data:
+      title: "RelayTV"
+      message: "Enqueued: {{ shared_url }}"
+```
+
+---
 
 ## 1) Doorbell → Show Front Door Camera (RTSP)
 
@@ -230,9 +310,6 @@ party_mode_relaytv:
 
 ## 6) “AI Announcement” Pattern (TTS + Video)
 
-This example uses HA TTS to speak, then plays a related clip.
-(You can swap TTS for Assist, Piper, cloud TTS, etc.)
-
 ```yaml
 alias: RelayTV - AI Announcement Pattern
 mode: single
@@ -315,7 +392,7 @@ Insert custom “house announcements” during downtime or between queued items.
 Copy `custom_components/relaytv` into:
 
 ```text
-/config/custom_components/relaytv
+/ config / custom_components / relaytv
 ```
 
 Restart Home Assistant.
