@@ -20,9 +20,18 @@ DEFAULT_PANEL_PATH = "relaytv"
 SERVICE_SMART_URL = "smart_url"
 SERVICE_PLAY_NOW = "play_now"
 SERVICE_ANNOUNCE = "announce"
+SERVICE_PLAY_TEMPORARY = "play_temporary"
+SERVICE_OVERLAY = "overlay"
+SERVICE_PLAY_SYNCED = "play_synced"
+SERVICE_SNAPSHOT = "snapshot"
+SERVICE_PLAY_WITH_RESUME = "play_with_resume"
+
+CONF_SENSOR_STREAM_MAPPINGS = "sensor_stream_mappings"
+CONF_RESUME_POSITIONS = "resume_positions"
 
 # Data keys
 DATA_COORDINATOR = "coordinator"
 DATA_API = "api"
 DATA_STORE = "store"
 DATA_PANEL_SETTINGS = "panel_settings"
+DATA_LAST_SNAPSHOT_URL = "last_snapshot_url"

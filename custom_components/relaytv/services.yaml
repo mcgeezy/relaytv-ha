@@ -65,3 +65,126 @@ announce:
       default: false
       selector:
         boolean:
+
+play_temporary:
+  name: Play temporary
+  description: Temporarily interrupt playback and resume afterward (RelayTV POST /play_temporary).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    url:
+      required: true
+      selector:
+        text:
+    timeout:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 300
+          mode: box
+    volume:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+          mode: slider
+
+overlay:
+  name: Overlay
+  description: Display text/image overlay without interrupting playback (RelayTV POST /overlay).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    text:
+      required: false
+      selector:
+        text:
+    duration:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 120
+          mode: box
+    position:
+      required: false
+      selector:
+        select:
+          options:
+            - top-left
+            - top-right
+            - bottom-left
+            - bottom-right
+            - center
+    image_url:
+      required: false
+      selector:
+        text:
+
+play_synced:
+  name: Play synced
+  description: Start the same URL on multiple RelayTV entities at the same target timestamp.
+  fields:
+    url:
+      required: true
+      selector:
+        text:
+    target_entities:
+      required: true
+      selector:
+        entity:
+          multiple: true
+          domain: media_player
+          integration: relaytv
+    delay_buffer_sec:
+      required: false
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 20
+          mode: box
+
+snapshot:
+  name: Snapshot
+  description: Capture a snapshot from RelayTV and expose snapshot_url on the entity.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+
+play_with_resume:
+  name: Play with resume
+  description: Play URL and resume from previously stored position when available.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    url:
+      required: true
+      selector:
+        text:
+    use_ytdlp:
+      required: false
+      selector:
+        boolean:
+    cec:
+      required: false
+      selector:
+        boolean:

@@ -21,10 +21,11 @@
     "step": {
       "init": {
         "title": "Sidebar panel",
-        "description": "Choose whether the sidebar is enabled and which server it displays.",
+        "description": "Choose sidebar behavior and optional sensor-to-stream mappings.",
         "data": {
           "panel_enabled": "Enable sidebar panel",
-          "panel_target_entry_id": "Server shown in sidebar"
+          "panel_target_entry_id": "Server shown in sidebar",
+          "sensor_stream_mappings": "Sensor to Stream Mapping (list of {sensor_entity_id, url})"
         }
       }
     }

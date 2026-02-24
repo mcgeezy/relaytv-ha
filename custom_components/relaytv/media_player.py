@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DATA_API, DATA_COORDINATOR, DOMAIN
+from .const import DATA_API, DATA_COORDINATOR, DATA_LAST_SNAPSHOT_URL, DOMAIN
 
 
 def _num(v: Any) -> Optional[float]:
@@ -221,6 +221,16 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if t.tzinfo is None:
             return t.replace(tzinfo=timezone.utc)
         return t
+
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs: dict[str, Any] = {}
+        store = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+        snapshot_url = store.get(DATA_LAST_SNAPSHOT_URL)
+        if snapshot_url:
+            attrs["snapshot_url"] = snapshot_url
+        return attrs
 
     @property
     def entity_picture(self) -> Optional[str]:

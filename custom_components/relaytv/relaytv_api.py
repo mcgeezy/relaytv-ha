@@ -86,6 +86,51 @@ class RelayTVApi:
         data = await self._request_json("POST", "enqueue", json={"url": url})
         return data is not None
 
+    async def play_temporary(
+        self,
+        *,
+        url: str,
+        timeout_sec: float | None = None,
+        volume_override: float | None = None,
+        resume: bool = True,
+        resume_mode: str = "auto",
+    ) -> bool:
+        payload: dict[str, Any] = {"url": url, "resume": resume, "resume_mode": resume_mode}
+        if timeout_sec is not None:
+            payload["timeout_sec"] = float(timeout_sec)
+        if volume_override is not None:
+            payload["volume_override"] = float(volume_override)
+        return (await self._request_json("POST", "play_temporary", json=payload)) is not None
+
+    async def overlay(
+        self,
+        *,
+        text: str | None = None,
+        duration: float | None = None,
+        position: str | None = None,
+        image_url: str | None = None,
+    ) -> bool:
+        payload: dict[str, Any] = {}
+        if text:
+            payload["text"] = text
+        if duration is not None:
+            payload["duration"] = float(duration)
+        if position:
+            payload["position"] = position
+        if image_url:
+            payload["image_url"] = image_url
+        return (await self._request_json("POST", "overlay", json=payload)) is not None
+
+    async def play_at(self, *, url: str, start_at: float) -> bool:
+        payload = {"url": url, "start_at": float(start_at)}
+        return (await self._request_json("POST", "play_at", json=payload)) is not None
+
+    async def snapshot(self) -> Optional[dict[str, Any]]:
+        data = await self._request_json("POST", "snapshot", json={})
+        if data is not None:
+            return data
+        return await self._request_json("GET", "snapshot")
+
     async def next(self) -> bool:
         """Skip to the next queued item (POST /next)."""
         data = await self._request_json("POST", "next", json={})

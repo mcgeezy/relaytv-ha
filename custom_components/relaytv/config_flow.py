@@ -9,12 +9,14 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_BASE_URL,
     CONF_PANEL_ENABLED,
     CONF_PANEL_TARGET_ENTRY_ID,
+    CONF_SENSOR_STREAM_MAPPINGS,
     CONF_SERVER_NAME,
     DATA_PANEL_SETTINGS,
     DATA_STORE,
@@ -106,6 +108,23 @@ class RelayTVWebUIOptionsFlow(config_entries.OptionsFlow):
             await settings_store.async_save(updated)
             self.hass.data.setdefault(DOMAIN, {})[DATA_STORE] = settings_store
             self.hass.data[DOMAIN][DATA_PANEL_SETTINGS] = updated
+
+            mappings = user_input.get(CONF_SENSOR_STREAM_MAPPINGS, [])
+            if not isinstance(mappings, list):
+                mappings = []
+            clean_mappings = []
+            for item in mappings:
+                if not isinstance(item, dict):
+                    continue
+                sensor = item.get("sensor_entity_id")
+                url = item.get("url")
+                if isinstance(sensor, str) and isinstance(url, str) and sensor and url:
+                    clean_mappings.append({"sensor_entity_id": sensor, "url": url})
+
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options={CONF_SENSOR_STREAM_MAPPINGS: clean_mappings},
+            )
             await self.hass.config_entries.async_reload(self._config_entry.entry_id)
             return self.async_create_entry(title="", data={})
 
@@ -119,6 +138,10 @@ class RelayTVWebUIOptionsFlow(config_entries.OptionsFlow):
                     CONF_PANEL_TARGET_ENTRY_ID,
                     default=current_target,
                 ): vol.In(choices),
+                vol.Optional(
+                    CONF_SENSOR_STREAM_MAPPINGS,
+                    default=self._config_entry.options.get(CONF_SENSOR_STREAM_MAPPINGS, []),
+                ): selector.ObjectSelector(),
             }
         )
 
