@@ -61,6 +61,22 @@ def _normalize_base_url(raw: str) -> str:
     return normalized
 
 
+def _absolute_url(base_url: str, maybe_url: str | None) -> str | None:
+    if not maybe_url:
+        return None
+    value = str(maybe_url).strip()
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme in ("http", "https"):
+        return value
+    base = (base_url or "").rstrip("/")
+    tail = value.lstrip("/")
+    if not base or not tail:
+        return None
+    return f"{base}/{tail}"
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {})
     return True
@@ -377,6 +393,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         data = await store[DATA_API].snapshot() or {}
         snapshot_url = data.get("image_url") if isinstance(data, dict) else None
+        snapshot_url = _absolute_url(store[DATA_API].base_url, snapshot_url)
         if snapshot_url:
             store[DATA_LAST_SNAPSHOT_URL] = snapshot_url
             await store[DATA_COORDINATOR].async_request_refresh()

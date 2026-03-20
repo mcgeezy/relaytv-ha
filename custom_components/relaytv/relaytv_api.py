@@ -9,6 +9,7 @@ We intentionally prefer the canonical endpoints:
 - POST /enqueue
 - POST /next
 - POST /pause | /resume | /toggle_pause
+- POST /playback/play
 - POST /seek_abs
 - POST /volume
 - POST /stop
@@ -201,7 +202,7 @@ class RelayTVApi:
     async def ensure_playing(self) -> bool:
         """Best-effort play semantics for Home Assistant.
 
-        RelayTV does not currently expose a single "resume session or play next" endpoint.
+        Used as a compatibility fallback when /playback/play is unavailable.
         We emulate expected behavior:
 
         - If paused -> POST /resume
