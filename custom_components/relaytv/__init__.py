@@ -125,36 +125,50 @@ def _fallback_entry_id(hass: HomeAssistant) -> str | None:
     return None
 
 
-def _resolve_entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str | None:
+def _target_entity_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
     entity_ids: list[str] = []
     raw_entity = call.data.get(CONF_ENTITY_ID)
     if isinstance(raw_entity, str):
-        entity_ids = [raw_entity]
+        entity_ids.append(raw_entity)
     elif isinstance(raw_entity, list):
-        entity_ids = [item for item in raw_entity if isinstance(item, str)]
+        entity_ids.extend(item for item in raw_entity if isinstance(item, str))
 
     registry = er.async_get(hass)
+    device_id = call.data.get("device_id")
+    device_ids = [device_id] if isinstance(device_id, str) else device_id
+    if isinstance(device_ids, list):
+        for item in device_ids:
+            if not isinstance(item, str):
+                continue
+            for reg_entry in er.async_entries_for_device(registry, item):
+                if reg_entry.entity_id.startswith("media_player."):
+                    entity_ids.append(reg_entry.entity_id)
 
-    if not entity_ids:
-        device_id = call.data.get("device_id")
-        device_ids = [device_id] if isinstance(device_id, str) else device_id
-        if isinstance(device_ids, list):
-            for item in device_ids:
-                if not isinstance(item, str):
-                    continue
-                for reg_entry in er.async_entries_for_device(registry, item):
-                    if reg_entry.entity_id.startswith("media_player."):
-                        entity_ids.append(reg_entry.entity_id)
+    return list(dict.fromkeys(entity_ids))
 
-    for entity_id in entity_ids:
+
+def _resolve_entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
+    registry = er.async_get(hass)
+    entry_ids: list[str] = []
+    for entity_id in _target_entity_ids_for_call(hass, call):
         reg_entry = registry.async_get(entity_id)
         if reg_entry and _get_entry_data(hass, reg_entry.config_entry_id):
-            return reg_entry.config_entry_id
+            entry_ids.append(reg_entry.config_entry_id)
+
+    if entry_ids:
+        return list(dict.fromkeys(entry_ids))
 
     panel_target = hass.data.get(DOMAIN, {}).get(DATA_PANEL_SETTINGS, {}).get(CONF_PANEL_TARGET_ENTRY_ID)
     if panel_target and _get_entry_data(hass, panel_target):
-        return panel_target
-    return _fallback_entry_id(hass)
+        return [panel_target]
+
+    fallback = _fallback_entry_id(hass)
+    return [fallback] if fallback else []
+
+
+def _resolve_entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str | None:
+    entry_ids = _resolve_entry_ids_for_call(hass, call)
+    return entry_ids[0] if entry_ids else None
 
 
 def _resolve_entries_for_entities(hass: HomeAssistant, entity_ids: list[str]) -> list[str]:
@@ -318,23 +332,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         url = (call.data.get("url") or "").strip()
         if not url:
             return
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
-        await store[DATA_API].smart_url(url)
-        await store[DATA_COORDINATOR].async_request_refresh()
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].smart_url(url)
+            await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_play_now(call: ServiceCall):
         url = (call.data.get("url") or "").strip()
         if not url:
             return
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
-        await store[DATA_API].play(url=url, use_ytdlp=call.data.get("use_ytdlp"), cec=call.data.get("cec"))
-        await store[DATA_COORDINATOR].async_request_refresh()
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].play(url=url, use_ytdlp=call.data.get("use_ytdlp"), cec=call.data.get("cec"))
+            await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_announce(call: ServiceCall):
         await _handle_play_now(call)
@@ -343,28 +357,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         url = (call.data.get("url") or "").strip()
         if not url:
             return
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
-        await store[DATA_API].play_temporary(
-            url=url,
-            timeout_sec=call.data.get("timeout"),
-            volume_override=call.data.get("volume"),
-        )
-        await store[DATA_COORDINATOR].async_request_refresh()
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].play_temporary(
+                url=url,
+                timeout_sec=call.data.get("timeout"),
+                volume_override=call.data.get("volume"),
+            )
+            await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_overlay(call: ServiceCall):
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
-        await store[DATA_API].overlay(
-            text=call.data.get("text"),
-            duration=call.data.get("duration"),
-            position=call.data.get("position"),
-            image_url=call.data.get("image_url"),
-        )
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].overlay(
+                text=call.data.get("text"),
+                duration=call.data.get("duration"),
+                position=call.data.get("position"),
+                image_url=call.data.get("image_url"),
+            )
 
     async def _handle_play_synced(call: ServiceCall):
         url = (call.data.get("url") or "").strip()
@@ -372,13 +386,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         delay = float(call.data.get("delay_buffer_sec") or 2)
         start_at = time.time() + delay
-        targets = call.data.get("target_entities") or call.data.get(CONF_ENTITY_ID) or []
+        targets = call.data.get("target_entities")
+        entry_ids: list[str] = []
         if isinstance(targets, str):
             targets = [targets]
-        entry_ids = _resolve_entries_for_entities(hass, [e for e in targets if isinstance(e, str)])
+        if isinstance(targets, list):
+            entry_ids = _resolve_entries_for_entities(hass, [e for e in targets if isinstance(e, str)])
         if not entry_ids:
-            fallback = _resolve_entry_id_for_call(hass, call)
-            entry_ids = [fallback] if fallback else []
+            entry_ids = _resolve_entry_ids_for_call(hass, call)
         for entry_id in entry_ids:
             store = _get_entry_data(hass, entry_id)
             if not store:
@@ -387,31 +402,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_snapshot(call: ServiceCall):
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
-        data = await store[DATA_API].snapshot() or {}
-        snapshot_url = data.get("image_url") if isinstance(data, dict) else None
-        snapshot_url = _absolute_url(store[DATA_API].base_url, snapshot_url)
-        if snapshot_url:
-            store[DATA_LAST_SNAPSHOT_URL] = snapshot_url
-            await store[DATA_COORDINATOR].async_request_refresh()
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            data = await store[DATA_API].snapshot() or {}
+            snapshot_url = data.get("image_url") if isinstance(data, dict) else None
+            snapshot_url = _absolute_url(store[DATA_API].base_url, snapshot_url)
+            if snapshot_url:
+                store[DATA_LAST_SNAPSHOT_URL] = snapshot_url
+                await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_play_with_resume(call: ServiceCall):
         url = (call.data.get("url") or "").strip()
         if not url:
             return
-        entry_id = _resolve_entry_id_for_call(hass, call)
-        store = _get_entry_data(hass, entry_id) if entry_id else None
-        if not store:
-            return
         runtime = await _async_load_runtime_data(hass)
         resume_position = runtime.get(CONF_RESUME_POSITIONS, {}).get(url)
-        await store[DATA_API].play(url=url, use_ytdlp=call.data.get("use_ytdlp"), cec=call.data.get("cec"))
-        if resume_position is not None:
-            await store[DATA_API].seek_abs(float(resume_position))
-        await store[DATA_COORDINATOR].async_request_refresh()
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].play(url=url, use_ytdlp=call.data.get("use_ytdlp"), cec=call.data.get("cec"))
+            if resume_position is not None:
+                await store[DATA_API].seek_abs(float(resume_position))
+            await store[DATA_COORDINATOR].async_request_refresh()
 
     for service_name, handler in (
         (SERVICE_SMART_URL, _handle_smart_url),
