@@ -1,5 +1,7 @@
 # RelayTV Home Assistant Integration
 
+![RelayTV logo](custom_components/relaytv/brand/logo.png)
+
 RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-specific services.
 
 ## Current Feature Set
@@ -30,6 +32,14 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 | `relaytv.play_synced` | `POST /play_at` | Multi-entity time-aligned start |
 | `relaytv.snapshot` | `POST /snapshot` (fallback `GET /snapshot`) | Captures current frame |
 | `relaytv.play_with_resume` | `POST /play` + `POST /seek_abs` | Resume per-URL saved position |
+
+## Installation (HACS)
+
+1. Open HACS in Home Assistant.
+2. Add this repository as a custom repository with category `Integration`.
+3. Install `RelayTV`.
+4. Restart Home Assistant.
+5. Add the `RelayTV` integration from **Settings -> Devices & Services**.
 
 ## Installation (Manual)
 
