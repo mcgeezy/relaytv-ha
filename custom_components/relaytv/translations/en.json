@@ -1,27 +1,31 @@
 {
+  "title": "RelayTV Panel",
   "config": {
     "step": {
       "user": {
         "title": "Connect to RelayTV",
-        "description": "Enter the base URL where RelayTV is reachable from Home Assistant (example: http://relaytv-host:8787).",
+        "description": "Add a RelayTV server reachable from Home Assistant.",
         "data": {
-          "base_url": "RelayTV base URL"
+          "base_url": "RelayTV server address",
+          "server_name": "Name"
         }
       }
     },
     "error": {
-      "missing_base_url": "Please enter a RelayTV base URL."
+      "missing_base_url": "Please enter a RelayTV base URL.",
+      "missing_name": "Please enter a name.",
+      "already_configured": "This RelayTV server is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Panel options",
-        "description": "Customize how the RelayTV panel appears in the Home Assistant sidebar.",
+        "title": "Sidebar panel",
+        "description": "Choose sidebar behavior and optional sensor-to-stream mappings.",
         "data": {
-          "panel_title": "Sidebar title",
-          "panel_icon": "Sidebar icon (MDI)",
-          "panel_path": "Sidebar path (URL slug)"
+          "panel_enabled": "Enable sidebar panel",
+          "panel_target_entry_id": "Server shown in sidebar",
+          "sensor_stream_mappings": "Sensor to Stream Mapping (list of {sensor_entity_id, url})"
         }
       }
     }
