@@ -97,8 +97,10 @@ data:
 ## Known Limitations
 
 - `relaytv.play_now` currently maps to RelayTV `POST /play` (queue-clearing behavior).
+- RelayTV also exposes `POST /play_now`, but this integration does not currently use its preserve-current semantics.
 - No dedicated `enqueue` or `clear_queue` Home Assistant service is currently registered by this integration.
 - Overlay calls must include at least `text` or `image_url`.
+- Snapshots require active playback on the RelayTV server.
 - Integration uses local polling; it does not currently use WebSocket push updates.
 
 ## Compatibility

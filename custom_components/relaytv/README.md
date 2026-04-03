@@ -35,8 +35,11 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 
 ## Notes
 
+- `smart_url` uses RelayTV `POST /smart`, which enqueues while already playing and otherwise starts playback immediately.
 - `play_now` and `announce` currently target RelayTV `POST /play`.
+- RelayTV also exposes `POST /play_now`, but this integration does not currently use its preserve-current behavior.
 - Overlay requires `text` or `image_url`.
+- Snapshot requires active playback on the RelayTV server.
 - Snapshot responses are normalized to absolute URLs for Home Assistant entity attributes.
 
 For fuller documentation and examples, see the repository root README.

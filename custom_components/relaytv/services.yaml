@@ -1,6 +1,6 @@
 smart_url:
   name: Smart play URL
-  description: Resolve and play a shared URL in RelayTV (RelayTV POST /smart).
+  description: RelayTV one-button URL handling via POST /smart. If RelayTV is already playing, the URL is enqueued; otherwise it starts immediate playback.
   target:
     entity:
       domain: media_player
@@ -16,7 +16,7 @@ smart_url:
 
 play_now:
   name: Play now
-  description: Play a URL immediately (RelayTV POST /play). This clears the queue.
+  description: Play a URL immediately using RelayTV POST /play. This clears the queue and does not currently use RelayTV POST /play_now preserve-current semantics.
   target:
     entity:
       domain: media_player
@@ -42,7 +42,7 @@ play_now:
 
 announce:
   name: Announce
-  description: Alias for play_now. (RelayTV does not currently implement a distinct announcement mode.)
+  description: Alias for play_now. This currently uses RelayTV POST /play and does not use a distinct announcement endpoint.
   target:
     entity:
       domain: media_player
@@ -158,7 +158,7 @@ play_synced:
 
 snapshot:
   name: Snapshot
-  description: Capture a snapshot from RelayTV and expose snapshot_url on the entity.
+  description: Capture a snapshot from RelayTV and expose snapshot_url on the entity. Active playback is required by the RelayTV server.
   target:
     entity:
       domain: media_player
