@@ -83,10 +83,10 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.update_interval = None if enabled else _POLL_INTERVAL_FALLBACK
         self._async_unsub_refresh()
         if not enabled and self._listeners:
-            self._schedule_refresh()
+            DataUpdateCoordinator._schedule_refresh(self)
         _LOGGER.debug("RelayTV SSE %s for %s", "enabled" if enabled else "disabled", self.api.base_url)
 
-    def _schedule_refresh(self) -> None:
+    def _schedule_debounced_refresh(self) -> None:
         if self._refresh_task and not self._refresh_task.done():
             return
 
@@ -125,7 +125,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(payload, dict):
                 self.async_set_updated_data(payload)
             else:
-                self._schedule_refresh()
+                self._schedule_debounced_refresh()
             return
 
         if event_name == "playback":
@@ -134,18 +134,18 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if merged is not None:
                     self.async_set_updated_data(merged)
                 else:
-                    self._schedule_refresh()
+                    self._schedule_debounced_refresh()
             else:
-                self._schedule_refresh()
+                self._schedule_debounced_refresh()
             return
 
         if event_name in ("queue", "jellyfin"):
-            self._schedule_refresh()
+            self._schedule_debounced_refresh()
             return
 
         if event_name == "hello":
             if not isinstance(self.data, dict) or not self.last_update_success:
-                self._schedule_refresh()
+                self._schedule_debounced_refresh()
             return
 
         if event_name == "ping":
