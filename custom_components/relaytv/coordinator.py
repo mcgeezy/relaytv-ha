@@ -23,6 +23,81 @@ _SSE_READ_TIMEOUT = 90
 _SSE_REFRESH_DEBOUNCE_SEC = 0.25
 
 
+def _as_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _rounded_int(value: Any) -> int | None:
+    num = _as_float(value)
+    if num is None:
+        return None
+    return int(round(num))
+
+
+def _extract_media_fields(data: dict[str, Any]) -> tuple[str, str, str]:
+    now_playing = data.get("now_playing")
+    np = now_playing if isinstance(now_playing, dict) else {}
+
+    title = str(np.get("title") or np.get("name") or data.get("title") or "")
+    url = str(np.get("url") or np.get("input") or data.get("url") or "")
+    thumbnail = str(
+        np.get("thumbnail_local")
+        or np.get("thumbnail")
+        or np.get("thumb")
+        or np.get("image")
+        or np.get("art")
+        or np.get("poster")
+        or data.get("thumbnail_local")
+        or data.get("thumbnail")
+        or data.get("image")
+        or data.get("art")
+        or ""
+    )
+    return title, url, thumbnail
+
+
+def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
+    """Return a compact HA-visible state signature for deduplicating SSE updates."""
+    if not isinstance(data, dict):
+        return None
+
+    title, url, thumbnail = _extract_media_fields(data)
+    has_now_playing = data.get("has_now_playing")
+    if has_now_playing is None:
+        has_now_playing = bool(url or title)
+
+    return (
+        str(data.get("state") or ""),
+        bool(data.get("playing")),
+        bool(data.get("paused")),
+        int(data.get("queue_length") or 0),
+        bool(has_now_playing),
+        _rounded_int(data.get("position")),
+        _rounded_int(data.get("duration")),
+        _rounded_int(data.get("volume")),
+        None if data.get("mute") is None else bool(data.get("mute")),
+        title,
+        url,
+        thumbnail,
+    )
+
+
+def _apply_if_material_change(
+    coordinator: "RelayTVCoordinator",
+    payload: dict[str, Any],
+) -> bool:
+    """Update coordinator data only when HA-visible state materially changed."""
+    if _material_state_view(coordinator.data) == _material_state_view(payload):
+        return False
+    coordinator.async_set_updated_data(payload)
+    return True
+
+
 def _merge_playback_snapshot(current: dict[str, Any] | None, payload: dict[str, Any]) -> dict[str, Any] | None:
     """Overlay compact playback-state fields onto the last full status payload."""
     if not isinstance(current, dict):
@@ -123,7 +198,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if event_name == "status":
             if isinstance(payload, dict):
-                self.async_set_updated_data(payload)
+                _apply_if_material_change(self, payload)
             else:
                 self._schedule_debounced_refresh()
             return
@@ -132,7 +207,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(payload, dict):
                 merged = _merge_playback_snapshot(self.data, payload)
                 if merged is not None:
-                    self.async_set_updated_data(merged)
+                    _apply_if_material_change(self, merged)
                 else:
                     self._schedule_debounced_refresh()
             else:
