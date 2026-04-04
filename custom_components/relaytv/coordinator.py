@@ -77,7 +77,6 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
         bool(data.get("paused")),
         int(data.get("queue_length") or 0),
         bool(has_now_playing),
-        _rounded_int(data.get("position")),
         _rounded_int(data.get("duration")),
         _rounded_int(data.get("volume")),
         None if data.get("mute") is None else bool(data.get("mute")),
