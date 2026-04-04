@@ -5,7 +5,11 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 ## Implemented Behavior
 
 - `media_player` platform is enabled (`custom_components/relaytv/media_player.py`).
-- Polling coordinator refreshes RelayTV `GET /status` every 3 seconds.
+- Hybrid state updates:
+  - bootstrap/reconnect uses RelayTV `GET /status`
+  - RelayTV `GET /ui/events` SSE provides hot-state updates
+  - `status` events are treated as authoritative full snapshots
+  - `playback` / `queue` / `jellyfin` events trigger fast updates or targeted refreshes
 - Sidebar panel is registered via Home Assistant frontend iframe panel APIs.
 - RelayTV services are registered from `services.yaml`:
   - `smart_url`
@@ -41,5 +45,6 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 - Overlay requires `text` or `image_url`.
 - Snapshot requires active playback on the RelayTV server.
 - Snapshot responses are normalized to absolute URLs for Home Assistant entity attributes.
+- The integration keeps `/status` as bootstrap/fallback and does not treat `/ui/events` as a replay log.
 
 For fuller documentation and examples, see the repository root README.

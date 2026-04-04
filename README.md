@@ -7,7 +7,10 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 ## Current Feature Set
 
 - Creates a `media_player` entity for each RelayTV config entry.
-- Polls RelayTV `GET /status` every 3 seconds.
+- Uses a hybrid RelayTV state model:
+  - `GET /status` for bootstrap, reconnect, and full refresh fallback
+  - `GET /ui/events` SSE for immediate UI-state updates
+  - authoritative `status` events plus fast-path `playback` / refresh-hint `queue` and `jellyfin` events
 - Supports media controls from Home Assistant:
   - Play, pause, stop
   - Next and previous
@@ -101,7 +104,7 @@ data:
 - No dedicated `enqueue` or `clear_queue` Home Assistant service is currently registered by this integration.
 - Overlay calls must include at least `text` or `image_url`.
 - Snapshots require active playback on the RelayTV server.
-- Integration uses local polling; it does not currently use WebSocket push updates.
+- `/ui/events` is treated as a live push stream, not a replay log; `/status` remains the reconnect/bootstrap fallback.
 
 ## Compatibility
 

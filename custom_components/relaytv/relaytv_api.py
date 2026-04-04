@@ -4,6 +4,7 @@ This integration targets the RelayTV server API documented in relaytv/docs/API.m
 We intentionally prefer the canonical endpoints:
 
 - GET  /status
+- GET  /ui/events
 - POST /play
 - POST /smart
 - POST /enqueue
@@ -43,6 +44,10 @@ class RelayTVApi:
     base_url: str
     timeout_s: float = 8.0
 
+    def url_for(self, path: str) -> str:
+        """Build an absolute RelayTV URL for a relative API path."""
+        return _join(self.base_url, path)
+
     async def _request_json(
         self,
         method: str,
@@ -50,7 +55,7 @@ class RelayTVApi:
         *,
         json: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
-        url = _join(self.base_url, path)
+        url = self.url_for(path)
         try:
             async with asyncio.timeout(self.timeout_s):
                 async with self.session.request(method, url, json=json) as resp:

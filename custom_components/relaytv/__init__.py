@@ -321,6 +321,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.async_add_listener(_save_resume_position)
 
     await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_start()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     hass.data[DOMAIN][entry.entry_id]["mapping_unsubs"] = _setup_mapping_listeners(hass, entry)
@@ -449,6 +450,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     entry_data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if entry_data:
+        await entry_data[DATA_COORDINATOR].async_stop()
         for unsub in entry_data.get("mapping_unsubs", []):
             unsub()
 
@@ -483,6 +485,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     store = _get_entry_data(hass, entry.entry_id)
     if store and base_url:
         store[DATA_API].base_url = base_url
+        await store[DATA_COORDINATOR].async_restart()
         for unsub in store.get("mapping_unsubs", []):
             unsub()
         store["mapping_unsubs"] = _setup_mapping_listeners(hass, entry)
