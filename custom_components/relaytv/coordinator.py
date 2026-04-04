@@ -18,7 +18,6 @@ from .relaytv_api import RelayTVApi
 _LOGGER = logging.getLogger(__name__)
 
 _POLL_INTERVAL_FALLBACK = timedelta(seconds=3)
-_POLL_INTERVAL_SSE = timedelta(seconds=30)
 _SSE_CONNECT_TIMEOUT = 10
 _SSE_READ_TIMEOUT = 90
 _SSE_REFRESH_DEBOUNCE_SEC = 0.25
@@ -81,7 +80,10 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._sse_enabled == enabled:
             return
         self._sse_enabled = enabled
-        self.update_interval = _POLL_INTERVAL_SSE if enabled else _POLL_INTERVAL_FALLBACK
+        self.update_interval = None if enabled else _POLL_INTERVAL_FALLBACK
+        self._async_unsub_refresh()
+        if not enabled and self._listeners:
+            self._schedule_refresh()
         _LOGGER.debug("RelayTV SSE %s for %s", "enabled" if enabled else "disabled", self.api.base_url)
 
     def _schedule_refresh(self) -> None:
