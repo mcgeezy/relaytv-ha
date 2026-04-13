@@ -2,32 +2,74 @@
 
 ![RelayTV logo](custom_components/relaytv/brand/logo.png)
 
+RelayTV for Home Assistant adds your self-hosted RelayTV servers as Home Assistant entities and services, making it easy to control playback, launch media, trigger overlays, and integrate RelayTV into automations and dashboards.
+
+RelayTV server:  
+https://github.com/mcgeezy/relaytv
+
+Android companion app:  
+https://github.com/mcgeezy/relaytv-android
+
+Support the project:  
+https://buymeacoffee.com/relaytv
+
+---
+
+## What This Integration Adds
+
 RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-specific services.
 
-## Current Feature Set
+### Core features
 
-- Creates a `media_player` entity for each RelayTV config entry.
-- Uses a hybrid RelayTV state model:
-  - `GET /status` for bootstrap, reconnect, and full refresh fallback
-  - `GET /ui/events` SSE for immediate UI-state updates
-  - authoritative `status` events plus fast-path `playback` / refresh-hint `queue` and `jellyfin` events
-- Supports media controls from Home Assistant:
-  - Play, pause, stop
-  - Next and previous
-  - Seek
-  - Volume set
-  - Turn on / turn off
-- Registers a Home Assistant sidebar panel that embeds the RelayTV UI.
-- Supports multi-target synchronized start (`play_synced`) using RelayTV `POST /play_at`.
-- Supports snapshots (`snapshot`) and exposes `snapshot_url` on the entity.
-- Stores resume positions and provides `play_with_resume` behavior.
-- Supports optional sensor->stream mappings that trigger temporary playback when a mapped sensor turns `on`.
+- Creates a `media_player` entity for each RelayTV config entry
+- Supports multiple RelayTV servers
+- Uses RelayTV live event updates plus `/status` refresh fallback
+- Adds a Home Assistant sidebar panel for the RelayTV web UI
+- Exposes RelayTV-specific services for smart play, temporary playback, overlays, snapshots, synchronized playback, and resume behavior
+- Supports automation-friendly control from scripts, dashboards, and mobile workflows
+
+### Supported media controls
+
+- Play
+- Pause
+- Stop
+- Next
+- Previous
+- Seek
+- Set volume
+- Turn on
+- Turn off
+
+### Advanced RelayTV features
+
+- Smart queue/play behavior
+- Temporary interrupt + resume playback
+- Text and image overlays
+- Snapshot capture
+- Multi-target synchronized playback
+- Resume-position support
+- Optional sensor-to-stream mapping triggers
+
+---
+
+## Screenshots
+
+<!-- Suggested screenshots:
+1. Home Assistant Devices & Services config entry
+2. Media player entity card
+3. Sidebar panel showing RelayTV UI
+4. Example automation/service call
+-->
+
+_Add screenshots here for release._
+
+---
 
 ## RelayTV Services
 
 | Service | RelayTV endpoint | Notes |
 | --- | --- | --- |
-| `relaytv.smart_url` | `POST /smart` | One-button play/enqueue behavior from RelayTV |
+| `relaytv.smart_url` | `POST /smart` | Smart play/enqueue behavior |
 | `relaytv.play_now` | `POST /play` | Immediate playback; clears queue |
 | `relaytv.announce` | `POST /play` | Alias of `play_now` |
 | `relaytv.play_temporary` | `POST /play_temporary` | Temporary interrupt + resume flow |
@@ -36,36 +78,58 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 | `relaytv.snapshot` | `POST /snapshot` (fallback `GET /snapshot`) | Captures current frame |
 | `relaytv.play_with_resume` | `POST /play` + `POST /seek_abs` | Resume per-URL saved position |
 
-## Installation (HACS)
+---
 
-1. Open HACS in Home Assistant.
-2. Add this repository as a custom repository with category `Integration`.
-3. Install `RelayTV`.
-4. Restart Home Assistant.
-5. Add the `RelayTV` integration from **Settings -> Devices & Services**.
+## Installation
 
-## Installation (Manual)
+### HACS
 
-1. Copy this repository's `custom_components/relaytv` folder into your Home Assistant config:
+1. Open HACS in Home Assistant
+2. Add this repository as a custom repository with category `Integration`
+3. Install `RelayTV`
+4. Restart Home Assistant
+5. Add the `RelayTV` integration from **Settings → Devices & Services**
 
-   `/config/custom_components/relaytv/`
+### Manual
 
-2. Restart Home Assistant.
-3. Go to **Settings -> Devices & Services -> Add Integration**.
-4. Search for **RelayTV**.
+1. Copy `custom_components/relaytv` into your Home Assistant config:
+
+   ```text
+   /config/custom_components/relaytv/
+   ```
+
+2. Restart Home Assistant
+3. Go to **Settings → Devices & Services → Add Integration**
+4. Search for **RelayTV**
 5. Enter:
-   - RelayTV base URL (example: `http://relaytv-host:8787`)
+   - RelayTV base URL, for example `http://relaytv-host:8787`
    - Display name for this RelayTV instance
 
-## Options
+---
+
+## Configuration Options
 
 From the integration options flow, you can configure:
 
-- `panel_enabled`: enable/disable sidebar panel registration
-- `panel_target_entry_id`: which RelayTV config entry is used by the shared sidebar panel
-- `sensor_stream_mappings`: list of sensor-to-URL mappings for temporary playback triggers
+- `panel_enabled` — enable or disable sidebar panel registration
+- `panel_target_entry_id` — choose which RelayTV server is used by the shared sidebar panel
+- `sensor_stream_mappings` — map sensors to temporary playback URLs
+
+---
 
 ## Example Service Calls
+
+### Smart play / enqueue
+
+```yaml
+service: relaytv.smart_url
+target:
+  entity_id: media_player.relaytv_living_room
+data:
+  url: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+### Immediate playback
 
 ```yaml
 service: relaytv.play_now
@@ -77,6 +141,8 @@ data:
   cec: false
 ```
 
+### Temporary playback
+
 ```yaml
 service: relaytv.play_temporary
 target:
@@ -86,6 +152,8 @@ data:
   timeout: 10
   volume: 0.6
 ```
+
+### Overlay message
 
 ```yaml
 service: relaytv.overlay
@@ -97,15 +165,47 @@ data:
   position: top-right
 ```
 
-## Known Limitations
+---
 
-- `relaytv.play_now` currently maps to RelayTV `POST /play` (queue-clearing behavior).
-- RelayTV also exposes `POST /play_now`, but this integration does not currently use its preserve-current semantics.
-- No dedicated `enqueue` or `clear_queue` Home Assistant service is currently registered by this integration.
-- Overlay calls must include at least `text` or `image_url`.
-- Snapshots require active playback on the RelayTV server.
-- `/ui/events` is treated as a live push stream, not a replay log; `/status` remains the reconnect/bootstrap fallback.
+## Typical Use Cases
+
+- Send shared links from Home Assistant automations to a RelayTV screen
+- Launch temporary doorbell or announcement media, then resume previous playback
+- Display overlay messages on TVs around the home
+- Add RelayTV as a dashboard-accessible media target
+- Keep multiple RelayTV devices available in one Home Assistant setup
+- Start synchronized playback across more than one RelayTV screen
+
+
+---
+
+## Companion Projects
+
+- RelayTV server: https://github.com/mcgeezy/relaytv
+- RelayTV Android app: https://github.com/mcgeezy/relaytv-android
+
+### Planned / work in progress
+
+- iPhone companion app
+- Continued multi-device and automation improvements
+- Ongoing UX polish across the RelayTV ecosystem
+
+---
+
+## Support The Project
+
+If RelayTV is useful to you, donations help support continued development of the server, Home Assistant integration, Android app, and future companion apps.
+
+Buy me a coffee:  
+https://buymeacoffee.com/relaytv
+
+---
 
 ## Compatibility
 
-Validated against RelayTV app routes in `/opt/relaytv/app/relaytv_app/routes.py` and API docs in `/opt/relaytv/docs/API.md`.
+Validated against the RelayTV server API and current app route structure.
+
+## License
+
+Same license as the RelayTV core project:  
+https://github.com/mcgeezy/relaytv
