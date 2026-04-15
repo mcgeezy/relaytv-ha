@@ -25,7 +25,7 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 - Supports multiple RelayTV servers
 - Uses RelayTV live event updates plus `/status` refresh fallback
 - Adds a Home Assistant sidebar panel for the RelayTV web UI
-- Exposes RelayTV-specific services for smart play, temporary playback, overlays, snapshots, synchronized playback, and resume behavior
+- Exposes RelayTV-specific services for smart play, temporary playback, overlays, snapshots, synchronized playback, upload/play, upload/enqueue, and resume behavior
 - Supports automation-friendly control from scripts, dashboards, and mobile workflows
 
 ### Supported media controls
@@ -48,6 +48,7 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 - Snapshot capture
 - Multi-target synchronized playback
 - Resume-position support
+- Direct media upload from Home Assistant local media/files to RelayTV ingest endpoints
 - Optional sensor-to-stream mapping triggers
 
 ---
@@ -77,6 +78,9 @@ _Add screenshots here for release._
 | `relaytv.play_synced` | `POST /play_at` | Multi-entity time-aligned start |
 | `relaytv.snapshot` | `POST /snapshot` (fallback `GET /snapshot`) | Captures current frame |
 | `relaytv.play_with_resume` | `POST /play` + `POST /seek_abs` | Resume per-URL saved position |
+| `relaytv.upload_media` | `POST /ingest/media` | Upload local HA media/file and return RelayTV media URL |
+| `relaytv.upload_media_play` | `POST /ingest/media/play` | Upload local HA media/file and start playback |
+| `relaytv.upload_media_enqueue` | `POST /ingest/media/enqueue` | Upload local HA media/file and append to queue |
 
 ---
 
@@ -165,17 +169,43 @@ data:
   position: top-right
 ```
 
+### Upload media and play
+
+```yaml
+service: relaytv.upload_media_play
+target:
+  entity_id: media_player.relaytv_living_room
+data:
+  file_path: /config/www/clip.mp4
+  title: Shared Clip
+```
+
+`file_path` must be readable by Home Assistant and allowed by `allowlist_external_dirs`.
+When using the service UI, the `file` field can also select a local Home Assistant media source item.
+
 ---
 
 ## Typical Use Cases
 
 - Send shared links from Home Assistant automations to a RelayTV screen
+- Upload and play local Home Assistant media files on RelayTV
 - Launch temporary doorbell or announcement media, then resume previous playback
 - Display overlay messages on TVs around the home
 - Add RelayTV as a dashboard-accessible media target
 - Keep multiple RelayTV devices available in one Home Assistant setup
 - Start synchronized playback across more than one RelayTV screen
 
+---
+
+## Known Limitations
+
+- `relaytv.play_now` currently maps to RelayTV `POST /play` (queue-clearing behavior)
+- RelayTV also exposes `POST /play_now`, but this integration does not currently use its preserve-current behavior
+- No dedicated `clear_queue` Home Assistant service is currently registered by this integration
+- Upload services require a local media source item or a file path available inside the Home Assistant container
+- Overlay calls must include at least `text` or `image_url`
+- Snapshots require active playback on the RelayTV server
+- `/ui/events` is treated as a live push stream, not a replay log; `/status` remains the reconnect/bootstrap fallback
 
 ---
 

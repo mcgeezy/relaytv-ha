@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import time
 from urllib.parse import urlparse
 
 from homeassistant.components import frontend
+from homeassistant.components.media_source import async_resolve_media
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENTITY_ID
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import aiohttp_client, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
@@ -38,6 +41,9 @@ from .const import (
     SERVICE_PLAY_WITH_RESUME,
     SERVICE_SMART_URL,
     SERVICE_SNAPSHOT,
+    SERVICE_UPLOAD_MEDIA,
+    SERVICE_UPLOAD_MEDIA_ENQUEUE,
+    SERVICE_UPLOAD_MEDIA_PLAY,
 )
 from .coordinator import RelayTVCoordinator
 from .relaytv_api import RelayTVApi
@@ -169,6 +175,39 @@ def _resolve_entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[
 def _resolve_entry_id_for_call(hass: HomeAssistant, call: ServiceCall) -> str | None:
     entry_ids = _resolve_entry_ids_for_call(hass, call)
     return entry_ids[0] if entry_ids else None
+
+
+async def _resolve_upload_path(hass: HomeAssistant, call: ServiceCall) -> str:
+    media = call.data.get("file")
+    if isinstance(media, dict):
+        media_content_id = media.get("media_content_id")
+        if isinstance(media_content_id, str) and media_content_id:
+            resolved = await async_resolve_media(hass, media_content_id, None)
+            if resolved.path is None:
+                raise ServiceValidationError("RelayTV upload requires a local media file")
+            path = str(resolved.path)
+            if await hass.async_add_executor_job(Path(path).is_file):
+                return path
+            raise ServiceValidationError(f"RelayTV upload file does not exist: {path}")
+
+    file_path = str(call.data.get("file_path") or "").strip()
+    if not file_path:
+        raise ServiceValidationError("RelayTV upload requires either file or file_path")
+
+    allowed = await hass.async_add_executor_job(hass.config.is_allowed_path, file_path)
+    if not allowed:
+        raise ServiceValidationError(
+            f"RelayTV upload file path is not allowed by Home Assistant: {file_path}. "
+            "Add the directory to allowlist_external_dirs."
+        )
+    if not await hass.async_add_executor_job(Path(file_path).is_file):
+        raise ServiceValidationError(f"RelayTV upload file does not exist: {file_path}")
+    return file_path
+
+
+def _upload_title(call: ServiceCall, path: str) -> str | None:
+    title = str(call.data.get("title") or "").strip()
+    return title or Path(path).stem
 
 
 def _resolve_entries_for_entities(hass: HomeAssistant, entity_ids: list[str]) -> list[str]:
@@ -429,6 +468,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await store[DATA_API].seek_abs(float(resume_position))
             await store[DATA_COORDINATOR].async_request_refresh()
 
+    async def _handle_upload_media(call: ServiceCall):
+        path = await _resolve_upload_path(hass, call)
+        title = _upload_title(call, path)
+        results: list[dict] = []
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            data = await store[DATA_API].upload_media(path, title=title)
+            if data is None:
+                raise ServiceValidationError(f"RelayTV media upload failed for {store[DATA_API].base_url}")
+            results.append({"entry_id": entry_id, "base_url": store[DATA_API].base_url, "response": data})
+        return {"results": results}
+
+    async def _handle_upload_media_play(call: ServiceCall):
+        path = await _resolve_upload_path(hass, call)
+        title = _upload_title(call, path)
+        results: list[dict] = []
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            data = await store[DATA_API].upload_media_play(path, title=title)
+            if data is None:
+                raise ServiceValidationError(f"RelayTV media upload/play failed for {store[DATA_API].base_url}")
+            await store[DATA_COORDINATOR].async_request_refresh()
+            results.append({"entry_id": entry_id, "base_url": store[DATA_API].base_url, "response": data})
+        return {"results": results}
+
+    async def _handle_upload_media_enqueue(call: ServiceCall):
+        path = await _resolve_upload_path(hass, call)
+        title = _upload_title(call, path)
+        results: list[dict] = []
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            data = await store[DATA_API].upload_media_enqueue(path, title=title)
+            if data is None:
+                raise ServiceValidationError(f"RelayTV media upload/enqueue failed for {store[DATA_API].base_url}")
+            await store[DATA_COORDINATOR].async_request_refresh()
+            results.append({"entry_id": entry_id, "base_url": store[DATA_API].base_url, "response": data})
+        return {"results": results}
+
     for service_name, handler in (
         (SERVICE_SMART_URL, _handle_smart_url),
         (SERVICE_PLAY_NOW, _handle_play_now),
@@ -441,6 +524,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ):
         if not hass.services.has_service(DOMAIN, service_name):
             hass.services.async_register(DOMAIN, service_name, handler)
+
+    for service_name, handler in (
+        (SERVICE_UPLOAD_MEDIA, _handle_upload_media),
+        (SERVICE_UPLOAD_MEDIA_PLAY, _handle_upload_media_play),
+        (SERVICE_UPLOAD_MEDIA_ENQUEUE, _handle_upload_media_enqueue),
+    ):
+        if not hass.services.has_service(DOMAIN, service_name):
+            hass.services.async_register(
+                DOMAIN,
+                service_name,
+                handler,
+                supports_response=SupportsResponse.OPTIONAL,
+            )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
@@ -471,6 +567,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_PLAY_SYNCED,
             SERVICE_SNAPSHOT,
             SERVICE_PLAY_WITH_RESUME,
+            SERVICE_UPLOAD_MEDIA,
+            SERVICE_UPLOAD_MEDIA_PLAY,
+            SERVICE_UPLOAD_MEDIA_ENQUEUE,
         ):
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)

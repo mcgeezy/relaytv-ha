@@ -188,3 +188,84 @@ play_with_resume:
       required: false
       selector:
         boolean:
+
+upload_media:
+  name: Upload media
+  description: Upload a local Home Assistant media file to RelayTV using POST /ingest/media. This stores the file and returns a RelayTV media URL without playing or queueing it.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    file:
+      required: false
+      selector:
+        media:
+          accept:
+            - video/*
+            - audio/*
+    file_path:
+      required: false
+      example: "/config/www/clip.mp4"
+      selector:
+        text:
+    title:
+      required: false
+      selector:
+        text:
+
+upload_media_play:
+  name: Upload media and play
+  description: Upload a local Home Assistant media file to RelayTV and start playback using POST /ingest/media/play.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    file:
+      required: false
+      selector:
+        media:
+          accept:
+            - video/*
+            - audio/*
+    file_path:
+      required: false
+      example: "/config/www/clip.mp4"
+      selector:
+        text:
+    title:
+      required: false
+      selector:
+        text:
+
+upload_media_enqueue:
+  name: Upload media and enqueue
+  description: Upload a local Home Assistant media file to RelayTV and append it to the queue using POST /ingest/media/enqueue.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+    device:
+      integration: relaytv
+  fields:
+    file:
+      required: false
+      selector:
+        media:
+          accept:
+            - video/*
+            - audio/*
+    file_path:
+      required: false
+      example: "/config/www/clip.mp4"
+      selector:
+        text:
+    title:
+      required: false
+      selector:
+        text:

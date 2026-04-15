@@ -8,6 +8,9 @@ We intentionally prefer the canonical endpoints:
 - POST /play
 - POST /smart
 - POST /enqueue
+- POST /ingest/media
+- POST /ingest/media/play
+- POST /ingest/media/enqueue
 - POST /next
 - POST /pause | /resume | /toggle_pause
 - POST /playback/play
@@ -22,18 +25,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def _join(base: str, path: str) -> str:
     base = (base or "").rstrip("/")
     path = (path or "").lstrip("/")
     return f"{base}/{path}" if path else base
+
+
+async def _iter_file_chunks(file_path: Path):
+    file_obj = await asyncio.to_thread(file_path.open, "rb")
+    try:
+        while True:
+            chunk = await asyncio.to_thread(file_obj.read, _UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        await asyncio.to_thread(file_obj.close)
 
 
 @dataclass
@@ -43,6 +61,7 @@ class RelayTVApi:
     session: aiohttp.ClientSession
     base_url: str
     timeout_s: float = 8.0
+    upload_timeout_s: float = 3600.0
 
     def url_for(self, path: str) -> str:
         """Build an absolute RelayTV URL for a relative API path."""
@@ -68,6 +87,36 @@ class RelayTVApi:
         except Exception:
             return None
 
+    async def _upload_media(
+        self,
+        path: str,
+        *,
+        endpoint: str,
+        title: str | None = None,
+    ) -> Optional[dict[str, Any]]:
+        file_path = Path(path)
+        url = self.url_for(endpoint)
+        filename = file_path.name
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        form = aiohttp.FormData()
+        if title:
+            form.add_field("title", title)
+
+        try:
+            form.add_field("file", _iter_file_chunks(file_path), filename=filename, content_type=content_type)
+            async with asyncio.timeout(self.upload_timeout_s):
+                async with self.session.post(url, data=form) as resp:
+                    if resp.status >= 400:
+                        _LOGGER.debug("RelayTV media upload failed: %s %s", resp.status, await resp.text())
+                        return None
+                    try:
+                        return await resp.json(content_type=None)
+                    except Exception:
+                        return {}
+        except Exception:
+            _LOGGER.debug("RelayTV media upload request failed", exc_info=True)
+            return None
+
     async def get_status(self) -> Optional[dict[str, Any]]:
         """Fetch current playback/status."""
         return await self._request_json("GET", "status")
@@ -91,6 +140,18 @@ class RelayTVApi:
         """Add an item to the end of the queue (POST /enqueue)."""
         data = await self._request_json("POST", "enqueue", json={"url": url})
         return data is not None
+
+    async def upload_media(self, path: str, *, title: str | None = None) -> Optional[dict[str, Any]]:
+        """Upload local media without queueing or playing (POST /ingest/media)."""
+        return await self._upload_media(path, endpoint="ingest/media", title=title)
+
+    async def upload_media_play(self, path: str, *, title: str | None = None) -> Optional[dict[str, Any]]:
+        """Upload local media and start playback (POST /ingest/media/play)."""
+        return await self._upload_media(path, endpoint="ingest/media/play", title=title)
+
+    async def upload_media_enqueue(self, path: str, *, title: str | None = None) -> Optional[dict[str, Any]]:
+        """Upload local media and enqueue it (POST /ingest/media/enqueue)."""
+        return await self._upload_media(path, endpoint="ingest/media/enqueue", title=title)
 
     async def play_temporary(
         self,
