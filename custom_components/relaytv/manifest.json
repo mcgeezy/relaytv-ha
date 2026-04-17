@@ -1,4 +1,6 @@
 {
+  "domain": "relaytv",
+  "name": "RelayTV",
   "codeowners": [
     "@mcgeezy"
   ],
@@ -7,10 +9,8 @@
     "frontend"
   ],
   "documentation": "https://github.com/mcgeezy/relaytv-ha",
-  "domain": "relaytv",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/mcgeezy/relaytv-ha/issues",
-  "name": "RelayTV",
   "requirements": [],
-  "version": "0.3.8"
+  "version": "0.3.9"
 }

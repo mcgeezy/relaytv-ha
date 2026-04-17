@@ -25,7 +25,7 @@
         "data": {
           "panel_enabled": "Enable sidebar panel",
           "panel_target_entry_id": "Server shown in sidebar",
-          "sensor_stream_mappings": "Sensor to Stream Mapping (list of {sensor_entity_id, url})"
+          "sensor_stream_mappings": "Sensor to stream mappings"
         }
       }
     }
