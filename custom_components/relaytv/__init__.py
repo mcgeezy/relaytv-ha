@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import aiohttp_client, entity_registry as er
+from homeassistant.helpers import aiohttp_client, config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 
@@ -50,6 +50,7 @@ from .relaytv_api import RelayTVApi
 
 _LOGGER = logging.getLogger(__name__)
 RUNTIME_STORE_KEY = f"{DOMAIN}_runtime"
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 def _normalize_base_url(raw: str) -> str:

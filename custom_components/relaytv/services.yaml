@@ -5,8 +5,6 @@ smart_url:
     entity:
       domain: media_player
       integration: relaytv
-    device:
-      integration: relaytv
   fields:
     url:
       required: true
@@ -20,8 +18,6 @@ play_now:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     url:
@@ -47,8 +43,6 @@ announce:
     entity:
       domain: media_player
       integration: relaytv
-    device:
-      integration: relaytv
   fields:
     url:
       required: true
@@ -72,8 +66,6 @@ play_temporary:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     url:
@@ -102,8 +94,6 @@ overlay:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     text:
@@ -163,8 +153,6 @@ snapshot:
     entity:
       domain: media_player
       integration: relaytv
-    device:
-      integration: relaytv
 
 play_with_resume:
   name: Play with resume
@@ -172,8 +160,6 @@ play_with_resume:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     url:
@@ -195,8 +181,6 @@ upload_media:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     file:
@@ -223,8 +207,6 @@ upload_media_play:
     entity:
       domain: media_player
       integration: relaytv
-    device:
-      integration: relaytv
   fields:
     file:
       required: false
@@ -249,8 +231,6 @@ upload_media_enqueue:
   target:
     entity:
       domain: media_player
-      integration: relaytv
-    device:
       integration: relaytv
   fields:
     file:
