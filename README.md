@@ -75,7 +75,7 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 
 Add this automation to share links to the Home Assistant Phone App and play them on TV
 
-   ```text
+```yaml
 alias: RelayTV - Smart play from share
 description: Opens shared URLs/text in RelayTV via relaytv.smart_url
 triggers:
@@ -94,7 +94,7 @@ variables:
     {{ trigger.event.data.url
        if trigger.event.data.url is defined else
        (trigger.event.data.text if trigger.event.data.text is defined else '') }}
-   ```
+```
 
 ---
 
