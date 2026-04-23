@@ -22,4 +22,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: README.md
           files: relaytv.zip

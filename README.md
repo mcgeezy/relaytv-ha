@@ -1,6 +1,6 @@
 # RelayTV Home Assistant Integration
 
-![RelayTV Screenshots](relaytv-ha.png)
+![RelayTV Screenshots](https://raw.githubusercontent.com/mcgeezy/relaytv-ha/main/relaytv-ha.png)
 
 RelayTV for Home Assistant adds your self-hosted RelayTV servers as Home Assistant entities and services, making it easy to control playback, launch media, trigger overlays, and integrate RelayTV into automations and dashboards.
 
