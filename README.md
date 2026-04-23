@@ -1,6 +1,6 @@
 # RelayTV Home Assistant Integration
 
-![RelayTV logo](custom_components/relaytv/brand/logo.png)
+![RelayTV Screenshots](relaytv-ha.png)
 
 RelayTV for Home Assistant adds your self-hosted RelayTV servers as Home Assistant entities and services, making it easy to control playback, launch media, trigger overlays, and integrate RelayTV into automations and dashboards.
 
@@ -53,19 +53,6 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 
 ---
 
-## Screenshots
-
-<!-- Suggested screenshots:
-1. Home Assistant Devices & Services config entry
-2. Media player entity card
-3. Sidebar panel showing RelayTV UI
-4. Example automation/service call
--->
-
-_Add screenshots here for release._
-
----
-
 ## RelayTV Services
 
 | Service | RelayTV endpoint | Notes |
@@ -81,6 +68,33 @@ _Add screenshots here for release._
 | `relaytv.upload_media` | `POST /ingest/media` | Upload local HA media/file and return RelayTV media URL |
 | `relaytv.upload_media_play` | `POST /ingest/media/play` | Upload local HA media/file and start playback |
 | `relaytv.upload_media_enqueue` | `POST /ingest/media/enqueue` | Upload local HA media/file and append to queue |
+
+---
+
+## Home Assistant Companion App Share Automation
+
+Add this automation to share links to the Home Assistant Phone App and play them on TV
+
+   ```text
+alias: RelayTV - Smart play from share
+description: Opens shared URLs/text in RelayTV via relaytv.smart_url
+triggers:
+  - event_type: mobile_app.share
+    trigger: event
+conditions:
+  - condition: template
+    value_template: "{{ shared | trim | length > 0 }}"
+actions:
+  - data:
+      url: "{{ shared | trim }}"
+    action: relaytv.smart_url
+mode: single
+variables:
+  shared: |-
+    {{ trigger.event.data.url
+       if trigger.event.data.url is defined else
+       (trigger.event.data.text if trigger.event.data.text is defined else '') }}
+   ```
 
 ---
 
