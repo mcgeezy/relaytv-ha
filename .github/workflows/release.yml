@@ -16,8 +16,8 @@ jobs:
 
       - name: Create relaytv.zip for HACS
         run: |
-          cd custom_components
-          zip -r ../relaytv.zip relaytv
+          cd custom_components/relaytv
+          zip -r ../../relaytv.zip . -x "__pycache__/*" "*/__pycache__/*" "*.pyc"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
