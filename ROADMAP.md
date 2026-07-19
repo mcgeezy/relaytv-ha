@@ -1,5 +1,8 @@
 # RelayTV Home Assistant 0.4.0 Roadmap
 
+Status: implemented and verified on `feat/ha-hardening-v0.4.0`. The companion
+RelayTV server changes are isolated on `fix/redact-public-playback-urls`.
+
 This roadmap turns the July 2026 integration review into a coordinated Home
 Assistant release and a small RelayTV server companion change. Each milestone
 is independently testable and committed before the next milestone begins.

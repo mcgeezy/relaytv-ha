@@ -11,6 +11,10 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
   - `status` events are treated as authoritative full snapshots
   - `playback` / `queue` / `jellyfin` events trigger fast updates or targeted refreshes
 - Sidebar panel is registered via Home Assistant frontend iframe panel APIs.
+- Optional bearer-token authentication is validated during setup and supports
+  Home Assistant reauthentication.
+- Credential-bearing query parameters are removed from entity state and
+  persisted resume keys.
 - RelayTV services are registered from `services.yaml`:
   - `smart_url`
   - `play_now`
@@ -32,7 +36,8 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 
 2. Restart Home Assistant.
 3. Add integration: **Settings -> Devices & Services -> Add Integration -> RelayTV**.
-4. Provide RelayTV base URL (example: `http://relaytv-host:8787`) and a server/display name.
+4. Provide RelayTV base URL (example: `http://relaytv-host:8787`), a
+   server/display name, and the optional RelayTV API token.
 
 ## Options
 
@@ -51,5 +56,6 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 - Snapshot requires active playback on the RelayTV server.
 - Snapshot responses are normalized to absolute URLs for Home Assistant entity attributes.
 - The integration keeps `/status` as bootstrap/fallback and does not treat `/ui/events` as a replay log.
+- Version 0.4.0 requires Home Assistant 2026.7 or newer.
 
 For fuller documentation and examples, see the repository root README.
