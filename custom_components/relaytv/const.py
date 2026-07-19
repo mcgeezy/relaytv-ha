@@ -5,6 +5,7 @@ DOMAIN = "relaytv"
 PLATFORMS: list[str] = ["media_player"]
 
 CONF_BASE_URL = "base_url"
+CONF_API_TOKEN = "api_token"
 CONF_SERVER_NAME = "server_name"
 CONF_PANEL_TITLE = "panel_title"
 CONF_PANEL_ICON = "panel_icon"

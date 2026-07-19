@@ -28,12 +28,39 @@ import logging
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import aiohttp
 
+from homeassistant.exceptions import HomeAssistantError
+
 _LOGGER = logging.getLogger(__name__)
 _UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+class RelayTVApiError(HomeAssistantError):
+    """Base error returned by the RelayTV API."""
+
+
+class RelayTVConnectionError(RelayTVApiError):
+    """RelayTV could not be reached."""
+
+
+class RelayTVAuthError(RelayTVApiError):
+    """RelayTV rejected the configured API token."""
+
+
+class RelayTVResponseError(RelayTVApiError):
+    """RelayTV returned an unsuccessful response."""
+
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(f"RelayTV request failed ({status}): {detail}")
+        self.status = status
+        self.detail = detail
+
+
+class RelayTVEndpointNotFound(RelayTVResponseError):
+    """RelayTV does not provide a compatibility endpoint."""
 
 
 def _join(base: str, path: str) -> str:
@@ -60,12 +87,35 @@ class RelayTVApi:
 
     session: aiohttp.ClientSession
     base_url: str
+    api_token: str = ""
     timeout_s: float = 8.0
     upload_timeout_s: float = 3600.0
+    on_auth_failure: Callable[[], None] | None = None
 
     def url_for(self, path: str) -> str:
         """Build an absolute RelayTV URL for a relative API path."""
         return _join(self.base_url, path)
+
+    @property
+    def auth_headers(self) -> dict[str, str]:
+        """Return bearer authentication headers when a token is configured."""
+        token = str(self.api_token or "").strip()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+    async def _raise_response_error(self, resp: aiohttp.ClientResponse) -> None:
+        try:
+            payload = await resp.json(content_type=None)
+            detail = payload.get("detail") if isinstance(payload, dict) else payload
+        except Exception:
+            detail = await resp.text()
+        message = str(detail or resp.reason or "request failed")[:500]
+        if resp.status in (401, 403):
+            if self.on_auth_failure is not None:
+                self.on_auth_failure()
+            raise RelayTVAuthError("RelayTV rejected the configured API token")
+        if resp.status in (404, 405):
+            raise RelayTVEndpointNotFound(resp.status, message)
+        raise RelayTVResponseError(resp.status, message)
 
     async def _request_json(
         self,
@@ -73,19 +123,22 @@ class RelayTVApi:
         path: str,
         *,
         json: Optional[dict[str, Any]] = None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any]:
         url = self.url_for(path)
         try:
             async with asyncio.timeout(self.timeout_s):
-                async with self.session.request(method, url, json=json) as resp:
+                async with self.session.request(method, url, json=json, headers=self.auth_headers) as resp:
                     if resp.status >= 400:
-                        return None
+                        await self._raise_response_error(resp)
                     try:
-                        return await resp.json(content_type=None)
+                        payload = await resp.json(content_type=None)
+                        return payload if isinstance(payload, dict) else {"result": payload}
                     except Exception:
                         return {}
-        except Exception:
-            return None
+        except RelayTVApiError:
+            raise
+        except (TimeoutError, aiohttp.ClientError) as err:
+            raise RelayTVConnectionError(f"Unable to communicate with RelayTV at {self.base_url}") from err
 
     async def _upload_media(
         self,
@@ -105,26 +158,37 @@ class RelayTVApi:
         try:
             form.add_field("file", _iter_file_chunks(file_path), filename=filename, content_type=content_type)
             async with asyncio.timeout(self.upload_timeout_s):
-                async with self.session.post(url, data=form) as resp:
+                async with self.session.post(url, data=form, headers=self.auth_headers) as resp:
                     if resp.status >= 400:
-                        _LOGGER.debug("RelayTV media upload failed: %s %s", resp.status, await resp.text())
-                        return None
+                        await self._raise_response_error(resp)
                     try:
-                        return await resp.json(content_type=None)
+                        payload = await resp.json(content_type=None)
+                        return payload if isinstance(payload, dict) else {"result": payload}
                     except Exception:
                         return {}
-        except Exception:
-            _LOGGER.debug("RelayTV media upload request failed", exc_info=True)
-            return None
+        except RelayTVApiError:
+            raise
+        except (TimeoutError, aiohttp.ClientError) as err:
+            raise RelayTVConnectionError(f"Unable to upload media to RelayTV at {self.base_url}") from err
 
-    async def get_status(self) -> Optional[dict[str, Any]]:
+    async def get_status(self) -> dict[str, Any]:
         """Fetch current playback/status."""
         return await self._request_json("GET", "status")
 
+    async def validate(self) -> None:
+        """Validate connectivity and write authentication without changing state."""
+        await self.get_status()
+        try:
+            await self._request_json("POST", "auth/check", json={})
+        except RelayTVEndpointNotFound:
+            # Servers predating /auth/check are valid when their write guard is
+            # disabled. Protected older servers reject this before route lookup.
+            return
+
     async def smart_url(self, url: str) -> bool:
         """RelayTV one-button behavior (POST /smart)."""
-        data = await self._request_json("POST", "smart", json={"url": url})
-        return data is not None
+        await self._request_json("POST", "smart", json={"url": url})
+        return True
 
     async def play(self, url: str, *, use_ytdlp: bool | None = None, cec: bool | None = None) -> bool:
         """Immediate play; clears queue (POST /play)."""
@@ -133,13 +197,13 @@ class RelayTVApi:
             payload["use_ytdlp"] = bool(use_ytdlp)
         if cec is not None:
             payload["cec"] = bool(cec)
-        data = await self._request_json("POST", "play", json=payload)
-        return data is not None
+        await self._request_json("POST", "play", json=payload)
+        return True
 
     async def enqueue(self, url: str) -> bool:
         """Add an item to the end of the queue (POST /enqueue)."""
-        data = await self._request_json("POST", "enqueue", json={"url": url})
-        return data is not None
+        await self._request_json("POST", "enqueue", json={"url": url})
+        return True
 
     async def upload_media(self, path: str, *, title: str | None = None) -> Optional[dict[str, Any]]:
         """Upload local media without queueing or playing (POST /ingest/media)."""
@@ -167,7 +231,8 @@ class RelayTVApi:
             payload["timeout_sec"] = float(timeout_sec)
         if volume_override is not None:
             payload["volume_override"] = float(volume_override)
-        return (await self._request_json("POST", "play_temporary", json=payload)) is not None
+        await self._request_json("POST", "play_temporary", json=payload)
+        return True
 
     async def overlay(
         self,
@@ -186,39 +251,45 @@ class RelayTVApi:
             payload["position"] = position
         if image_url:
             payload["image_url"] = image_url
-        return (await self._request_json("POST", "overlay", json=payload)) is not None
+        await self._request_json("POST", "overlay", json=payload)
+        return True
 
     async def play_at(self, *, url: str, start_at: float) -> bool:
         payload = {"url": url, "start_at": float(start_at)}
-        return (await self._request_json("POST", "play_at", json=payload)) is not None
+        await self._request_json("POST", "play_at", json=payload)
+        return True
 
     async def snapshot(self) -> Optional[dict[str, Any]]:
-        data = await self._request_json("POST", "snapshot", json={})
-        if data is not None:
-            return data
-        return await self._request_json("GET", "snapshot")
+        try:
+            return await self._request_json("POST", "snapshot", json={})
+        except RelayTVEndpointNotFound:
+            return await self._request_json("GET", "snapshot")
 
     async def next(self) -> bool:
         """Skip to the next queued item (POST /next)."""
-        data = await self._request_json("POST", "next", json={})
-        return data is not None
+        await self._request_json("POST", "next", json={})
+        return True
 
     async def previous(self) -> bool:
         """Go to the previous item (POST /previous)."""
-        data = await self._request_json("POST", "previous", json={})
-        return data is not None
+        await self._request_json("POST", "previous", json={})
+        return True
 
     async def pause(self) -> bool:
-        return (await self._request_json("POST", "pause", json={})) is not None
+        await self._request_json("POST", "pause", json={})
+        return True
 
     async def resume(self) -> bool:
-        return (await self._request_json("POST", "resume", json={})) is not None
+        await self._request_json("POST", "resume", json={})
+        return True
 
     async def toggle_pause(self) -> bool:
-        return (await self._request_json("POST", "toggle_pause", json={})) is not None
+        await self._request_json("POST", "toggle_pause", json={})
+        return True
 
     async def stop(self) -> bool:
-        return (await self._request_json("POST", "stop", json={})) is not None
+        await self._request_json("POST", "stop", json={})
+        return True
 
     async def playback_play(self) -> bool:
         """User-facing Play semantics (POST /playback/play).
@@ -230,10 +301,11 @@ class RelayTVApi:
 
         If the endpoint is missing (older servers), fall back to ensure_playing().
         """
-        data = await self._request_json("POST", "playback/play", json={})
-        if data is not None:
+        try:
+            await self._request_json("POST", "playback/play", json={})
             return True
-        return await self.ensure_playing()
+        except RelayTVEndpointNotFound:
+            return await self.ensure_playing()
 
     async def seek_abs(self, sec: float) -> bool:
         """Seek to an absolute position in seconds (POST /seek_abs)."""
@@ -241,8 +313,8 @@ class RelayTVApi:
             sec_f = float(sec)
         except Exception:
             return False
-        data = await self._request_json("POST", "seek_abs", json={"sec": sec_f})
-        return data is not None
+        await self._request_json("POST", "seek_abs", json={"sec": sec_f})
+        return True
 
     async def set_volume(self, level: Any) -> bool:
         """Set volume from HA's 0.0-1.0 slider to RelayTV's 0-100 scale."""
@@ -258,12 +330,8 @@ class RelayTVApi:
             pct = v
         pct = max(0.0, min(200.0, float(pct)))
 
-        # RelayTV expects {"set": <number>}
-        for val in (pct, round(pct), int(round(pct))):
-            data = await self._request_json("POST", "volume", json={"set": val})
-            if data is not None:
-                return True
-        return False
+        await self._request_json("POST", "volume", json={"set": pct})
+        return True
 
     async def ensure_playing(self) -> bool:
         """Best-effort play semantics for Home Assistant.

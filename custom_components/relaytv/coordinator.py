@@ -11,9 +11,10 @@ from typing import Any
 import aiohttp
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .relaytv_api import RelayTVApi
+from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -134,10 +135,12 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sse_enabled = False
 
     async def _async_update_data(self) -> dict[str, Any]:
-        data = await self.api.get_status()
-        if data is None:
-            raise UpdateFailed("Unable to fetch RelayTV status")
-        return data
+        try:
+            return await self.api.get_status()
+        except RelayTVAuthError as err:
+            raise ConfigEntryAuthFailed from err
+        except RelayTVApiError as err:
+            raise UpdateFailed(str(err)) from err
 
     async def async_start(self) -> None:
         """Start the background SSE listener."""
@@ -243,6 +246,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         headers = {
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
+            **self.api.auth_headers,
         }
 
         while True:

@@ -20,6 +20,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_BASE_URL,
+    CONF_API_TOKEN,
     CONF_PANEL_ENABLED,
     CONF_PANEL_TARGET_ENTRY_ID,
     CONF_RESUME_POSITIONS,
@@ -354,7 +355,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_load_runtime_data(hass)
 
     session = aiohttp_client.async_get_clientsession(hass)
-    api = RelayTVApi(session=session, base_url=base_url)
+    @callback
+    def _start_reauth() -> None:
+        entry.async_start_reauth_if_available(hass)
+
+    api = RelayTVApi(
+        session=session,
+        base_url=base_url,
+        api_token=str(entry.data.get(CONF_API_TOKEN) or ""),
+        on_auth_failure=_start_reauth,
+    )
     coordinator = RelayTVCoordinator(hass=hass, api=api)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         DATA_API: api,
@@ -630,6 +640,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     store = _get_entry_data(hass, entry.entry_id)
     if store and base_url:
         store[DATA_API].base_url = base_url
+        store[DATA_API].api_token = str(entry.data.get(CONF_API_TOKEN) or "")
         await store[DATA_COORDINATOR].async_restart()
         for unsub in store.get("mapping_unsubs", []):
             unsub()
