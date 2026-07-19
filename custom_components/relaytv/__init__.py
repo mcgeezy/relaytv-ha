@@ -12,7 +12,7 @@ from homeassistant.components import frontend
 from homeassistant.components.media_source import async_resolve_media
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import aiohttp_client, config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
@@ -48,7 +48,7 @@ from .const import (
     SERVICE_UPLOAD_MEDIA_PLAY,
 )
 from .coordinator import RelayTVCoordinator
-from .relaytv_api import RelayTVApi
+from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
 from .url_utils import canonical_media_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -355,8 +355,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session=session,
         base_url=base_url,
         api_token=str(entry.data.get(CONF_API_TOKEN) or ""),
-        on_auth_failure=_start_reauth,
     )
+    try:
+        await api.validate()
+    except RelayTVAuthError as err:
+        raise ConfigEntryAuthFailed from err
+    except RelayTVApiError as err:
+        raise ConfigEntryNotReady(str(err)) from err
+    api.on_auth_failure = _start_reauth
     coordinator = RelayTVCoordinator(hass=hass, api=api)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         DATA_API: api,
