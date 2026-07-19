@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 import time
@@ -47,9 +48,11 @@ from .const import (
 )
 from .coordinator import RelayTVCoordinator
 from .relaytv_api import RelayTVApi
+from .url_utils import canonical_media_key
 
 _LOGGER = logging.getLogger(__name__)
 RUNTIME_STORE_KEY = f"{DOMAIN}_runtime"
+MAX_RESUME_POSITIONS = 500
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -112,13 +115,41 @@ async def _async_load_runtime_data(hass: HomeAssistant) -> dict:
         data["runtime_store"] = Store(hass, 1, RUNTIME_STORE_KEY)
     if "runtime_data" not in data:
         data["runtime_data"] = await data["runtime_store"].async_load() or {CONF_RESUME_POSITIONS: {}}
+        original = data["runtime_data"].get(CONF_RESUME_POSITIONS, {})
+        migrated = _migrate_resume_positions(original)
+        data["runtime_data"][CONF_RESUME_POSITIONS] = migrated
+        if migrated != original:
+            await data["runtime_store"].async_save(data["runtime_data"])
     data["runtime_data"].setdefault(CONF_RESUME_POSITIONS, {})
+    data.setdefault("runtime_lock", asyncio.Lock())
     return data["runtime_data"]
 
 
 async def _async_save_runtime_data(hass: HomeAssistant) -> None:
     data = hass.data.setdefault(DOMAIN, {})
     await data["runtime_store"].async_save(data["runtime_data"])
+
+
+def _migrate_resume_positions(value: object) -> dict[str, float]:
+    """Canonicalize, deduplicate, and cap persisted resume positions."""
+    if not isinstance(value, dict):
+        return {}
+    migrated: dict[str, float] = {}
+    for raw_url, raw_position in value.items():
+        key = canonical_media_key(raw_url)
+        if not key:
+            continue
+        try:
+            position = float(raw_position)
+        except (TypeError, ValueError):
+            continue
+        if position < 0:
+            continue
+        previous = migrated.pop(key, None)
+        migrated[key] = max(previous, position) if previous is not None else position
+    if len(migrated) > MAX_RESUME_POSITIONS:
+        migrated = dict(list(migrated.items())[-MAX_RESUME_POSITIONS:])
+    return migrated
 
 
 def _get_entry_data(hass: HomeAssistant, entry_id: str) -> dict | None:
@@ -338,7 +369,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         url = status.get("url") or (status.get("now_playing") or {}).get("url")
         position = status.get("position")
         duration = status.get("duration")
-        if not isinstance(url, str) or not url:
+        key = canonical_media_key(url)
+        if not key:
             return
         try:
             pos = float(position)
@@ -352,9 +384,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         async def _save() -> None:
-            runtime = await _async_load_runtime_data(hass)
-            runtime[CONF_RESUME_POSITIONS][url] = pos
-            await _async_save_runtime_data(hass)
+            await _async_load_runtime_data(hass)
+            async with hass.data[DOMAIN]["runtime_lock"]:
+                runtime = hass.data[DOMAIN]["runtime_data"]
+                positions = runtime[CONF_RESUME_POSITIONS]
+                if dur and (pos / dur >= 0.98 or dur - pos <= 30.0):
+                    if positions.pop(key, None) is not None:
+                        await _async_save_runtime_data(hass)
+                    return
+                previous = positions.get(key)
+                if previous is not None and abs(float(previous) - pos) < 10.0:
+                    return
+                positions.pop(key, None)
+                positions[key] = pos
+                while len(positions) > MAX_RESUME_POSITIONS:
+                    positions.pop(next(iter(positions)))
+                await _async_save_runtime_data(hass)
 
         hass.async_create_task(_save())
 
@@ -459,7 +504,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not url:
             return
         runtime = await _async_load_runtime_data(hass)
-        resume_position = runtime.get(CONF_RESUME_POSITIONS, {}).get(url)
+        resume_position = runtime.get(CONF_RESUME_POSITIONS, {}).get(canonical_media_key(url))
         for entry_id in _resolve_entry_ids_for_call(hass, call):
             store = _get_entry_data(hass, entry_id)
             if not store:

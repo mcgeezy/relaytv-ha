@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_API, DATA_COORDINATOR, DATA_LAST_SNAPSHOT_URL, DOMAIN
+from .url_utils import sanitize_url
 
 
 def _num(v: Any) -> Optional[float]:
@@ -200,7 +201,7 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def media_content_id(self) -> Optional[str]:
-        return _parse_status(self.coordinator.data).url
+        return sanitize_url(_parse_status(self.coordinator.data).url) or None
 
     @property
     def media_duration(self) -> Optional[float]:

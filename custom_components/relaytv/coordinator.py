@@ -21,6 +21,7 @@ _POLL_INTERVAL_FALLBACK = timedelta(seconds=3)
 _SSE_CONNECT_TIMEOUT = 10
 _SSE_READ_TIMEOUT = 90
 _SSE_REFRESH_DEBOUNCE_SEC = 0.25
+_POSITION_UPDATE_BUCKET_SEC = 15
 
 
 def _as_float(value: Any) -> float | None:
@@ -37,6 +38,15 @@ def _rounded_int(value: Any) -> int | None:
     if num is None:
         return None
     return int(round(num))
+
+
+def _position_bucket(data: dict[str, Any]) -> int | None:
+    position = _as_float(data.get("position"))
+    if position is None:
+        return None
+    if data.get("playing") and not data.get("paused"):
+        return int(position // _POSITION_UPDATE_BUCKET_SEC)
+    return int(round(position))
 
 
 def _extract_media_fields(data: dict[str, Any]) -> tuple[str, str, str]:
@@ -78,6 +88,7 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
         int(data.get("queue_length") or 0),
         bool(has_now_playing),
         _rounded_int(data.get("duration")),
+        _position_bucket(data),
         _rounded_int(data.get("volume")),
         None if data.get("mute") is None else bool(data.get("mute")),
         title,
