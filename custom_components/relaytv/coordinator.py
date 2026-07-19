@@ -81,17 +81,18 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
     has_now_playing = data.get("has_now_playing")
     if has_now_playing is None:
         has_now_playing = bool(url or title)
+    playing = bool(data.get("playing"))
 
     return (
         str(data.get("state") or ""),
-        bool(data.get("playing")),
+        playing,
         bool(data.get("paused")),
         int(data.get("queue_length") or 0),
         bool(has_now_playing),
         _rounded_int(data.get("duration")),
         _position_bucket(data),
-        _rounded_int(data.get("volume")),
-        None if data.get("mute") is None else bool(data.get("mute")),
+        _rounded_int(data.get("volume")) if playing else None,
+        (None if data.get("mute") is None else bool(data.get("mute"))) if playing else None,
         title,
         url,
         thumbnail,

@@ -92,3 +92,14 @@ async def test_server_error_does_not_trigger_playback_fallback() -> None:
 
     assert err.value.status == 503
     assert len(session.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_mute_sets_explicit_boolean() -> None:
+    session = FakeSession([FakeResponse(200, {"ok": True, "mute": True})])
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    await api.mute(True)
+
+    assert session.requests[0]["url"] == "http://relaytv.local:8787/mute"
+    assert session.requests[0]["json"] == {"set": True}

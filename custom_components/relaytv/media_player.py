@@ -15,6 +15,7 @@ from homeassistant.components.media_player.const import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -29,6 +30,13 @@ def _num(v: Any) -> Optional[float]:
         return float(v)
     except Exception:
         return None
+
+
+def _first_present(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data and data[key] is not None:
+            return data[key]
+    return None
 
 
 def _abs_url(base: str, maybe: Optional[str]) -> Optional[str]:
@@ -80,8 +88,8 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
         muted = data.get("mute")
     muted_b = None if muted is None else bool(muted)
 
-    position = _num(data.get("position") or data.get("pos") or data.get("time"))
-    duration = _num(data.get("duration") or data.get("len") or data.get("total"))
+    position = _num(_first_present(data, "position", "pos", "time"))
+    duration = _num(_first_present(data, "duration", "len", "total"))
 
     np = data.get("now_playing") or data.get("media") or {}
     title = None
@@ -146,7 +154,13 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self._entry = entry
         self._api = api
         self._attr_unique_id = f"{entry.entry_id}_player"
-        self._attr_name = entry.data.get(CONF_NAME, entry.title)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.data.get(CONF_NAME, entry.title),
+            manufacturer="RelayTV",
+            model="RelayTV server",
+            configuration_url=api.base_url,
+        )
 
         self._attr_supported_features = (
             MediaPlayerEntityFeature.PLAY
@@ -156,6 +170,7 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             | MediaPlayerEntityFeature.PREVIOUS_TRACK
             | MediaPlayerEntityFeature.SEEK
             | MediaPlayerEntityFeature.VOLUME_SET
+            | MediaPlayerEntityFeature.VOLUME_MUTE
             | MediaPlayerEntityFeature.TURN_ON
             | MediaPlayerEntityFeature.TURN_OFF
         )
@@ -180,20 +195,11 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def volume_level(self) -> Optional[float]:
         # HA expects 0.0-1.0. RelayTV reports 0-100 (or None when closed).
         v = _parse_status(self.coordinator.data).volume
-        try:
-            if v is None:
-                return 0.0
-            vf = float(v)
-            if vf > 1.0:
-                vf = vf / 100.0
-            return max(0.0, min(1.0, vf))
-        except Exception:
-            return 0.0
+        return v
 
     @property
     def is_volume_muted(self) -> Optional[bool]:
-        # RelayTV doesn't currently expose mute as a dedicated API.
-        return None
+        return _parse_status(self.coordinator.data).muted
 
     @property
     def media_title(self) -> Optional[str]:
@@ -267,8 +273,8 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
-        # Not supported by RelayTV API at this time.
-        return
+        await self._api.mute(mute)
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         # Same behavior as PLAY.

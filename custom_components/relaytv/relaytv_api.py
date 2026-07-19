@@ -333,6 +333,11 @@ class RelayTVApi:
         await self._request_json("POST", "volume", json={"set": pct})
         return True
 
+    async def mute(self, muted: bool) -> bool:
+        """Set RelayTV's native mpv mute property."""
+        await self._request_json("POST", "mute", json={"set": bool(muted)})
+        return True
+
     async def ensure_playing(self) -> bool:
         """Best-effort play semantics for Home Assistant.
 
