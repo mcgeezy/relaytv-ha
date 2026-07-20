@@ -286,5 +286,5 @@ python -m pytest -q
 
 ## License
 
-Same license as the RelayTV core project:  
-https://github.com/mcgeezy/relaytv
+RelayTV Home Assistant is licensed under the GNU General Public License,
+version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE).
