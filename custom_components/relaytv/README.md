@@ -59,3 +59,8 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 - Version 0.4.0 requires Home Assistant 2026.7 or newer.
 
 For fuller documentation and examples, see the repository root README.
+
+## License
+
+RelayTV Home Assistant is licensed under the GNU General Public License,
+version 3 only (`GPL-3.0-only`). See the repository root `LICENSE` file.
