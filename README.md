@@ -18,10 +18,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mcgeezy/relaytv-ha/actions"><img src="https://img.shields.io/github/actions/workflow/status/mcgeezy/relaytv-ha/ci.yml?branch=main&label=build&logo=github" alt="Build status"></a>
+  <a href="https://github.com/mcgeezy/relaytv-ha/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/mcgeezy/relaytv-ha/tests.yml?branch=main&label=tests&logo=github" alt="Tests status"></a>
   <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-custom-41BDF5?logo=homeassistantcommunitystore&logoColor=white" alt="HACS custom repository"></a>
   <a href="#compatibility"><img src="https://img.shields.io/badge/Home%20Assistant-2026.7%2B-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant 2026.7 or newer"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue" alt="GPL-3.0-only license"></a>
+  <a href="https://buymeacoffee.com/relaytv"><img src="https://img.shields.io/badge/Support-Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 </p>
 
 <p align="center">
