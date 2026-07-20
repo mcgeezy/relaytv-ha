@@ -7,13 +7,33 @@
         "description": "Add a RelayTV server reachable from Home Assistant.",
         "data": {
           "base_url": "RelayTV server address",
-          "server_name": "Name"
+          "server_name": "Name",
+          "api_token": "API token (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update RelayTV authentication",
+        "description": "Enter the API token configured on the RelayTV server.",
+        "data": {
+          "api_token": "API token"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure RelayTV",
+        "description": "Update the RelayTV connection and authentication settings.",
+        "data": {
+          "base_url": "RelayTV server address",
+          "server_name": "Name",
+          "api_token": "API token (optional)"
         }
       }
     },
     "error": {
-      "missing_base_url": "Please enter a RelayTV base URL.",
+      "invalid_base_url": "Enter a valid HTTP or HTTPS RelayTV base URL without credentials, query parameters, or a fragment.",
       "missing_name": "Please enter a name.",
+      "cannot_connect": "Unable to connect to RelayTV.",
+      "invalid_auth": "The RelayTV API token was rejected.",
+      "unknown": "Unexpected error while connecting to RelayTV.",
       "already_configured": "This RelayTV server is already configured."
     }
   },

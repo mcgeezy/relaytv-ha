@@ -24,6 +24,7 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 - Creates a `media_player` entity for each RelayTV config entry
 - Supports multiple RelayTV servers
 - Uses RelayTV live event updates plus `/status` refresh fallback
+- Supports an optional RelayTV API bearer token with reauthentication
 - Adds a Home Assistant sidebar panel for the RelayTV web UI
 - Exposes RelayTV-specific services for smart play, temporary playback, overlays, snapshots, synchronized playback, upload/play, upload/enqueue, and resume behavior
 - Supports automation-friendly control from scripts, dashboards, and mobile workflows
@@ -37,6 +38,7 @@ RelayTV integrates with Home Assistant as a local `media_player` plus RelayTV-sp
 - Previous
 - Seek
 - Set volume
+- Mute and unmute
 - Turn on
 - Turn off
 
@@ -122,6 +124,11 @@ variables:
 5. Enter:
    - RelayTV base URL, for example `http://relaytv-host:8787`
    - Display name for this RelayTV instance
+   - RelayTV API token, if `RELAYTV_API_TOKEN` is enabled on the server
+
+Use **Reconfigure** on the integration entry to change the server address,
+display name, or API token. The token is stored in the Home Assistant config
+entry and is sent only as a bearer authorization header to RelayTV.
 
 ---
 
@@ -132,6 +139,22 @@ From the integration options flow, you can configure:
 - `panel_enabled` — enable or disable sidebar panel registration
 - `panel_target_entry_id` — choose which RelayTV server is used by the shared sidebar panel
 - `sensor_stream_mappings` — map sensors to temporary playback URLs
+
+## Security and Upgrading to 0.4.0
+
+Version 0.4.0 sanitizes credential-bearing playback URLs before they reach
+Home Assistant state or resume storage. Existing resume data is migrated and
+limited to the 500 most recent media keys automatically.
+
+Home Assistant recorder history written by an older version is not rewritten.
+If a previous media identifier contained an upstream Jellyfin/Emby API key or
+signed URL, rotate that credential and consider purging old history for the
+RelayTV media-player entity.
+
+For defense in depth, update the RelayTV server to a version that redacts
+private playback fields from public status, queue, history, and SSE payloads.
+The matching server update also allows Home Assistant to process RelayTV
+thumbnails across origins without browser CORS errors.
 
 ---
 
@@ -220,6 +243,9 @@ When using the service UI, the `file` field can also select a local Home Assista
 - Overlay calls must include at least `text` or `image_url`
 - Snapshots require active playback on the RelayTV server
 - `/ui/events` is treated as a live push stream, not a replay log; `/status` remains the reconnect/bootstrap fallback
+- RelayTV releases predating `POST /auth/check` remain compatible, but the
+  current server release is recommended for public-payload redaction and
+  cross-origin thumbnails
 
 ---
 
@@ -247,7 +273,16 @@ https://buymeacoffee.com/relaytv
 
 ## Compatibility
 
-Validated against the RelayTV server API and current app route structure.
+Version 0.4.0 requires Home Assistant 2026.7 or newer. It is automatically
+tested against Home Assistant 2026.7.2 and the current RelayTV server API.
+
+For local verification:
+
+```bash
+python -m pip install --requirement requirements_test.txt
+ruff check custom_components tests
+python -m pytest -q
+```
 
 ## License
 

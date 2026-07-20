@@ -5,15 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .relaytv_api import RelayTVApi
+from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ _POLL_INTERVAL_FALLBACK = timedelta(seconds=3)
 _SSE_CONNECT_TIMEOUT = 10
 _SSE_READ_TIMEOUT = 90
 _SSE_REFRESH_DEBOUNCE_SEC = 0.25
+_POSITION_UPDATE_BUCKET_SEC = 15
 
 
 def _as_float(value: Any) -> float | None:
@@ -37,6 +40,15 @@ def _rounded_int(value: Any) -> int | None:
     if num is None:
         return None
     return int(round(num))
+
+
+def _position_bucket(data: dict[str, Any]) -> int | None:
+    position = _as_float(data.get("position"))
+    if position is None:
+        return None
+    if data.get("playing") and not data.get("paused"):
+        return int(position // _POSITION_UPDATE_BUCKET_SEC)
+    return int(round(position))
 
 
 def _extract_media_fields(data: dict[str, Any]) -> tuple[str, str, str]:
@@ -70,16 +82,18 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
     has_now_playing = data.get("has_now_playing")
     if has_now_playing is None:
         has_now_playing = bool(url or title)
+    playing = bool(data.get("playing"))
 
     return (
         str(data.get("state") or ""),
-        bool(data.get("playing")),
+        playing,
         bool(data.get("paused")),
         int(data.get("queue_length") or 0),
         bool(has_now_playing),
         _rounded_int(data.get("duration")),
-        _rounded_int(data.get("volume")),
-        None if data.get("mute") is None else bool(data.get("mute")),
+        _position_bucket(data),
+        _rounded_int(data.get("volume")) if playing else None,
+        (None if data.get("mute") is None else bool(data.get("mute"))) if playing else None,
         title,
         url,
         thumbnail,
@@ -93,6 +107,7 @@ def _apply_if_material_change(
     """Update coordinator data only when HA-visible state materially changed."""
     if _material_state_view(coordinator.data) == _material_state_view(payload):
         return False
+    coordinator.note_position_update(payload)
     coordinator.async_set_updated_data(payload)
     return True
 
@@ -121,12 +136,34 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sse_task: asyncio.Task[None] | None = None
         self._refresh_task: asyncio.Task[None] | None = None
         self._sse_enabled = False
+        self.position_updated_at: datetime | None = None
+        self._position_signature: tuple[Any, ...] | None = None
+
+    def note_position_update(self, data: dict[str, Any] | None) -> None:
+        """Record when the reported playback position last changed.
+
+        async_set_updated_data never stamps last_update_success_time, so the
+        coordinator keeps its own timestamp for media_position_updated_at.
+        """
+        payload = data if isinstance(data, dict) else {}
+        signature = (
+            _as_float(payload.get("position")),
+            bool(payload.get("playing")),
+            bool(payload.get("paused")),
+        )
+        if signature != self._position_signature:
+            self._position_signature = signature
+            self.position_updated_at = dt_util.utcnow()
 
     async def _async_update_data(self) -> dict[str, Any]:
-        data = await self.api.get_status()
-        if data is None:
-            raise UpdateFailed("Unable to fetch RelayTV status")
-        return data
+        try:
+            status = await self.api.get_status()
+        except RelayTVAuthError as err:
+            raise ConfigEntryAuthFailed from err
+        except RelayTVApiError as err:
+            raise UpdateFailed(str(err)) from err
+        self.note_position_update(status)
+        return status
 
     async def async_start(self) -> None:
         """Start the background SSE listener."""
@@ -232,6 +269,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         headers = {
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
+            **self.api.auth_headers,
         }
 
         while True:

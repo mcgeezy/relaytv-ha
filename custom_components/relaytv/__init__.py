@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 import time
@@ -10,15 +11,16 @@ from urllib.parse import urlparse
 from homeassistant.components import frontend
 from homeassistant.components.media_source import async_resolve_media
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import aiohttp_client, config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.target import TargetSelection, async_extract_referenced_entity_ids
 
 from .const import (
     CONF_BASE_URL,
+    CONF_API_TOKEN,
     CONF_PANEL_ENABLED,
     CONF_PANEL_TARGET_ENTRY_ID,
     CONF_RESUME_POSITIONS,
@@ -46,10 +48,12 @@ from .const import (
     SERVICE_UPLOAD_MEDIA_PLAY,
 )
 from .coordinator import RelayTVCoordinator
-from .relaytv_api import RelayTVApi
+from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
+from .url_utils import canonical_media_key
 
 _LOGGER = logging.getLogger(__name__)
 RUNTIME_STORE_KEY = f"{DOMAIN}_runtime"
+MAX_RESUME_POSITIONS = 500
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -112,13 +116,41 @@ async def _async_load_runtime_data(hass: HomeAssistant) -> dict:
         data["runtime_store"] = Store(hass, 1, RUNTIME_STORE_KEY)
     if "runtime_data" not in data:
         data["runtime_data"] = await data["runtime_store"].async_load() or {CONF_RESUME_POSITIONS: {}}
+        original = data["runtime_data"].get(CONF_RESUME_POSITIONS, {})
+        migrated = _migrate_resume_positions(original)
+        data["runtime_data"][CONF_RESUME_POSITIONS] = migrated
+        if migrated != original:
+            await data["runtime_store"].async_save(data["runtime_data"])
     data["runtime_data"].setdefault(CONF_RESUME_POSITIONS, {})
+    data.setdefault("runtime_lock", asyncio.Lock())
     return data["runtime_data"]
 
 
 async def _async_save_runtime_data(hass: HomeAssistant) -> None:
     data = hass.data.setdefault(DOMAIN, {})
     await data["runtime_store"].async_save(data["runtime_data"])
+
+
+def _migrate_resume_positions(value: object) -> dict[str, float]:
+    """Canonicalize, deduplicate, and cap persisted resume positions."""
+    if not isinstance(value, dict):
+        return {}
+    migrated: dict[str, float] = {}
+    for raw_url, raw_position in value.items():
+        key = canonical_media_key(raw_url)
+        if not key:
+            continue
+        try:
+            position = float(raw_position)
+        except (TypeError, ValueError):
+            continue
+        if position < 0:
+            continue
+        previous = migrated.pop(key, None)
+        migrated[key] = max(previous, position) if previous is not None else position
+    if len(migrated) > MAX_RESUME_POSITIONS:
+        migrated = dict(list(migrated.items())[-MAX_RESUME_POSITIONS:])
+    return migrated
 
 
 def _get_entry_data(hass: HomeAssistant, entry_id: str) -> dict | None:
@@ -132,38 +164,21 @@ def _fallback_entry_id(hass: HomeAssistant) -> str | None:
     return None
 
 
-def _target_entity_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
-    entity_ids: list[str] = []
-    raw_entity = call.data.get(CONF_ENTITY_ID)
-    if isinstance(raw_entity, str):
-        entity_ids.append(raw_entity)
-    elif isinstance(raw_entity, list):
-        entity_ids.extend(item for item in raw_entity if isinstance(item, str))
-
-    registry = er.async_get(hass)
-    device_id = call.data.get("device_id")
-    device_ids = [device_id] if isinstance(device_id, str) else device_id
-    if isinstance(device_ids, list):
-        for item in device_ids:
-            if not isinstance(item, str):
-                continue
-            for reg_entry in er.async_entries_for_device(registry, item):
-                if reg_entry.entity_id.startswith("media_player."):
-                    entity_ids.append(reg_entry.entity_id)
-
-    return list(dict.fromkeys(entity_ids))
-
-
 def _resolve_entry_ids_for_call(hass: HomeAssistant, call: ServiceCall) -> list[str]:
+    target = TargetSelection(call.data)
     registry = er.async_get(hass)
     entry_ids: list[str] = []
-    for entity_id in _target_entity_ids_for_call(hass, call):
+    selected = async_extract_referenced_entity_ids(hass, target)
+    entity_ids = selected.referenced | selected.indirectly_referenced
+    for entity_id in entity_ids:
         reg_entry = registry.async_get(entity_id)
         if reg_entry and _get_entry_data(hass, reg_entry.config_entry_id):
             entry_ids.append(reg_entry.config_entry_id)
 
     if entry_ids:
         return list(dict.fromkeys(entry_ids))
+    if target.has_any_target:
+        raise ServiceValidationError("The selected target does not contain a loaded RelayTV media player")
 
     panel_target = hass.data.get(DOMAIN, {}).get(DATA_PANEL_SETTINGS, {}).get(CONF_PANEL_TARGET_ENTRY_ID)
     if panel_target and _get_entry_data(hass, panel_target):
@@ -242,15 +257,21 @@ def _async_unregister_panel(hass: HomeAssistant) -> None:
 
 async def _async_update_panel(hass: HomeAssistant) -> None:
     settings = await _async_ensure_settings(hass)
-    _async_unregister_panel(hass)
     if not settings.get(CONF_PANEL_ENABLED, True):
+        _async_unregister_panel(hass)
         return
 
     target_entry_id = settings.get(CONF_PANEL_TARGET_ENTRY_ID)
     target = _get_entry_data(hass, target_entry_id) if target_entry_id else None
     if target is None:
+        configured_ids = {entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)}
+        if target_entry_id in configured_ids:
+            # Preserve both the selection and the existing panel while that
+            # entry is still loading.
+            return
         fallback_id = _fallback_entry_id(hass)
         if not fallback_id:
+            _async_unregister_panel(hass)
             return
         settings[CONF_PANEL_TARGET_ENTRY_ID] = fallback_id
         await _async_save_settings(hass)
@@ -258,17 +279,20 @@ async def _async_update_panel(hass: HomeAssistant) -> None:
         target_entry_id = fallback_id
 
     if not target:
+        _async_unregister_panel(hass)
         return
 
     url = target[DATA_API].base_url
+    _async_unregister_panel(hass)
     _register_panel(hass, path=DEFAULT_PANEL_PATH, title=DEFAULT_PANEL_TITLE, icon=DEFAULT_PANEL_ICON, url=url)
     _LOGGER.info("Registered RelayTV panel to entry %s (%s)", target_entry_id, url)
 
 
 async def _async_set_default_sidebar_target(hass: HomeAssistant, entry: ConfigEntry) -> None:
     settings = await _async_ensure_settings(hass)
-    settings[CONF_PANEL_TARGET_ENTRY_ID] = entry.entry_id
-    await _async_save_settings(hass)
+    if not settings.get(CONF_PANEL_TARGET_ENTRY_ID):
+        settings[CONF_PANEL_TARGET_ENTRY_ID] = entry.entry_id
+        await _async_save_settings(hass)
 
 
 def _entry_mappings(entry: ConfigEntry) -> list[dict]:
@@ -323,7 +347,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_load_runtime_data(hass)
 
     session = aiohttp_client.async_get_clientsession(hass)
-    api = RelayTVApi(session=session, base_url=base_url)
+    @callback
+    def _start_reauth() -> None:
+        entry.async_start_reauth_if_available(hass)
+
+    api = RelayTVApi(
+        session=session,
+        base_url=base_url,
+        api_token=str(entry.data.get(CONF_API_TOKEN) or ""),
+    )
+    try:
+        await api.validate()
+    except RelayTVAuthError as err:
+        raise ConfigEntryAuthFailed from err
+    except RelayTVApiError as err:
+        raise ConfigEntryNotReady(str(err)) from err
+    api.on_auth_failure = _start_reauth
     coordinator = RelayTVCoordinator(hass=hass, api=api)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         DATA_API: api,
@@ -338,7 +377,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         url = status.get("url") or (status.get("now_playing") or {}).get("url")
         position = status.get("position")
         duration = status.get("duration")
-        if not isinstance(url, str) or not url:
+        key = canonical_media_key(url)
+        if not key:
             return
         try:
             pos = float(position)
@@ -352,9 +392,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         async def _save() -> None:
-            runtime = await _async_load_runtime_data(hass)
-            runtime[CONF_RESUME_POSITIONS][url] = pos
-            await _async_save_runtime_data(hass)
+            await _async_load_runtime_data(hass)
+            async with hass.data[DOMAIN]["runtime_lock"]:
+                runtime = hass.data[DOMAIN]["runtime_data"]
+                positions = runtime[CONF_RESUME_POSITIONS]
+                if dur and (pos / dur >= 0.98 or dur - pos <= 30.0):
+                    if positions.pop(key, None) is not None:
+                        await _async_save_runtime_data(hass)
+                    return
+                previous = positions.get(key)
+                if previous is not None and abs(float(previous) - pos) < 10.0:
+                    return
+                positions.pop(key, None)
+                positions[key] = pos
+                while len(positions) > MAX_RESUME_POSITIONS:
+                    positions.pop(next(iter(positions)))
+                await _async_save_runtime_data(hass)
 
         hass.async_create_task(_save())
 
@@ -459,7 +512,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not url:
             return
         runtime = await _async_load_runtime_data(hass)
-        resume_position = runtime.get(CONF_RESUME_POSITIONS, {}).get(url)
+        resume_position = runtime.get(CONF_RESUME_POSITIONS, {}).get(canonical_media_key(url))
         for entry_id in _resolve_entry_ids_for_call(hass, call):
             store = _get_entry_data(hass, entry_id)
             if not store:
@@ -585,6 +638,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     store = _get_entry_data(hass, entry.entry_id)
     if store and base_url:
         store[DATA_API].base_url = base_url
+        store[DATA_API].api_token = str(entry.data.get(CONF_API_TOKEN) or "")
         await store[DATA_COORDINATOR].async_restart()
         for unsub in store.get("mapping_unsubs", []):
             unsub()
