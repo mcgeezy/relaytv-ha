@@ -36,7 +36,7 @@ const DEVICE_ID = option('device', '');
 const ENTITY = option('entity', 'media_player.living_room_tv');
 const PANEL = option('panel', 'relaytv');
 const OUTPUT = path.resolve(option('output', 'docs/images/readme'));
-const LOGO = path.resolve(option('logo', 'logo.png'));
+const LOGO = path.resolve(option('logo', 'docs/images/readme/relaytv-banner.png'));
 const TOKEN = process.env.HA_TOKEN;
 const REFRESH = process.env.HA_REFRESH || '';
 

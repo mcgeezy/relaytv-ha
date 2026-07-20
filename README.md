@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="RelayTV" width="360">
+  <img src="docs/images/readme/relaytv-banner.png" alt="RelayTV" width="620">
 </p>
 
 <h1 align="center">Your TV, native in Home Assistant.</h1>
