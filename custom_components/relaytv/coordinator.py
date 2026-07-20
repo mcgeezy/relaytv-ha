@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -13,6 +13,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
 
@@ -106,6 +107,7 @@ def _apply_if_material_change(
     """Update coordinator data only when HA-visible state materially changed."""
     if _material_state_view(coordinator.data) == _material_state_view(payload):
         return False
+    coordinator.note_position_update(payload)
     coordinator.async_set_updated_data(payload)
     return True
 
@@ -134,14 +136,34 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sse_task: asyncio.Task[None] | None = None
         self._refresh_task: asyncio.Task[None] | None = None
         self._sse_enabled = False
+        self.position_updated_at: datetime | None = None
+        self._position_signature: tuple[Any, ...] | None = None
+
+    def note_position_update(self, data: dict[str, Any] | None) -> None:
+        """Record when the reported playback position last changed.
+
+        async_set_updated_data never stamps last_update_success_time, so the
+        coordinator keeps its own timestamp for media_position_updated_at.
+        """
+        payload = data if isinstance(data, dict) else {}
+        signature = (
+            _as_float(payload.get("position")),
+            bool(payload.get("playing")),
+            bool(payload.get("paused")),
+        )
+        if signature != self._position_signature:
+            self._position_signature = signature
+            self.position_updated_at = dt_util.utcnow()
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            return await self.api.get_status()
+            status = await self.api.get_status()
         except RelayTVAuthError as err:
             raise ConfigEntryAuthFailed from err
         except RelayTVApiError as err:
             raise UpdateFailed(str(err)) from err
+        self.note_position_update(status)
+        return status
 
     async def async_start(self) -> None:
         """Start the background SSE listener."""

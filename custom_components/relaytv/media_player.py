@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlparse
 from typing import Any, Optional
 
@@ -79,8 +79,9 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
 
     vol = data.get("volume")
     vol_f = _num(vol)
-    # Some APIs use 0-100
-    if vol_f is not None and vol_f > 1.0:
+    # RelayTV always reports volume on a 0-100 scale (a raw 1 means 1%,
+    # not full volume), so convert unconditionally.
+    if vol_f is not None:
         vol_f = max(0.0, min(1.0, vol_f / 100.0))
 
     muted = data.get("muted")
@@ -219,15 +220,10 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def media_position_updated_at(self) -> Optional[datetime]:
-        # Helps HA render a moving seek bar while playing.
-        # Use coordinator timestamp if available; otherwise fall back to "now" (UTC).
-        t = getattr(self.coordinator, "last_update_success_time", None)
-        if t is None:
-            return datetime.now(timezone.utc)
-        # Ensure timezone-aware
-        if t.tzinfo is None:
-            return t.replace(tzinfo=timezone.utc)
-        return t
+        # The coordinator stamps this whenever the reported position changes
+        # (SSE and poll paths both), letting HA extrapolate the seek bar
+        # between updates.
+        return self.coordinator.position_updated_at
 
 
     @property

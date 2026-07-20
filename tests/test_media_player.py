@@ -27,6 +27,12 @@ def test_status_parser_preserves_zero_values() -> None:
     assert status.muted is True
 
 
+def test_status_parser_reads_volume_on_percent_scale() -> None:
+    # RelayTV reports 0-100; a raw 1 is 1%, not full volume.
+    assert _parse_status({"volume": 1}).volume == 0.01
+    assert _parse_status({"volume": 100}).volume == 1.0
+
+
 async def test_media_player_exposes_device_and_native_mute(hass) -> None:
     entry = MockConfigEntry(
         domain="relaytv",
