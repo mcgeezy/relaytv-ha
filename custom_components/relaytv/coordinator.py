@@ -379,6 +379,7 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         if payload.get("protocol_version") != 1:
                             raise RelayTVApiError("RelayTV WebSocket hello version is unsupported")
                         received_hello = True
+                        self._last_sequence = 0
                         healthy = True
                         self._set_push_enabled(True, transport="websocket", generation=generation)
                     self._record_sequence(envelope.get("sequence"), generation=generation)

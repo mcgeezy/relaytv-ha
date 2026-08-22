@@ -99,6 +99,7 @@ async def test_websocket_negotiates_hello_and_dispatches_playback(hass) -> None:
         ]
     )
     coordinator, session = _coordinator_with_socket(hass, socket, token="secret")
+    coordinator._last_sequence = 99
 
     healthy = await coordinator._async_websocket_once(
         1,
@@ -110,6 +111,7 @@ async def test_websocket_negotiates_hello_and_dispatches_playback(hass) -> None:
     assert coordinator.data["position"] == 12
     assert coordinator.active_transport is None
     assert coordinator._active_connection is None
+    assert coordinator._last_sequence == 8
     assert socket.closed is True
     assert session.ws_connect.call_args.kwargs["headers"] == {"Authorization": "Bearer secret"}
     assert "secret" not in session.ws_connect.call_args.args[0]
