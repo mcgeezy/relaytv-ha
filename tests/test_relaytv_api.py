@@ -103,3 +103,60 @@ async def test_mute_sets_explicit_boolean() -> None:
 
     assert session.requests[0]["url"] == "http://relaytv.local:8787/mute"
     assert session.requests[0]["json"] == {"set": True}
+
+
+@pytest.mark.asyncio
+async def test_realtime_capabilities_fall_back_to_legacy_sse_on_404() -> None:
+    session = FakeSession([FakeResponse(404, {"detail": "not found"})])
+    api = RelayTVApi(session, "http://relaytv.local:8787", api_token="testing-token")
+
+    capabilities = await api.get_realtime_capabilities()
+
+    assert capabilities["protocol_version"] == 0
+    assert capabilities["websocket"] == {"enabled": False}
+    assert capabilities["sse"] == {"enabled": True, "ui": "/ui/events"}
+    assert session.requests[0]["headers"] == {"Authorization": "Bearer testing-token"}
+
+
+@pytest.mark.asyncio
+async def test_realtime_capabilities_preserve_supported_transport_contract() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(
+                200,
+                {
+                    "protocol_version": 1,
+                    "preferred_transport": "websocket",
+                    "websocket": {
+                        "enabled": True,
+                        "ui": "/ui/ws",
+                        "subprotocol": "relaytv.realtime.v1",
+                    },
+                    "sse": {"enabled": True, "ui": "/ui/events"},
+                    "heartbeat_sec": 5,
+                    "replay": False,
+                },
+            )
+        ]
+    )
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    capabilities = await api.get_realtime_capabilities()
+
+    assert capabilities["preferred_transport"] == "websocket"
+    assert capabilities["websocket"]["subprotocol"] == "relaytv.realtime.v1"
+    assert capabilities["sse"]["ui"] == "/ui/events"
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://relaytv.local:8787", "ws://relaytv.local:8787/ui/ws"),
+        ("https://tv.example/relaytv", "wss://tv.example/relaytv/ui/ws"),
+    ],
+)
+def test_websocket_url_uses_matching_secure_scheme_without_credentials(base_url: str, expected: str) -> None:
+    api = RelayTVApi(FakeSession([]), base_url, api_token="must-not-leak")
+
+    assert api.websocket_url_for("ui/ws") == expected
+    assert "must-not-leak" not in api.websocket_url_for("ui/ws")

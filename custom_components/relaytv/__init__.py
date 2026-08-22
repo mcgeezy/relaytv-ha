@@ -637,9 +637,11 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     base_url = _normalize_base_url(entry.data.get(CONF_BASE_URL, ""))
     store = _get_entry_data(hass, entry.entry_id)
     if store and base_url:
+        coordinator = store[DATA_COORDINATOR]
+        await coordinator.async_stop()
         store[DATA_API].base_url = base_url
         store[DATA_API].api_token = str(entry.data.get(CONF_API_TOKEN) or "")
-        await store[DATA_COORDINATOR].async_restart()
+        await coordinator.async_start()
         for unsub in store.get("mapping_unsubs", []):
             unsub()
         store["mapping_unsubs"] = _setup_mapping_listeners(hass, entry)

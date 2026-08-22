@@ -29,6 +29,7 @@ import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
 
@@ -95,6 +96,14 @@ class RelayTVApi:
     def url_for(self, path: str) -> str:
         """Build an absolute RelayTV URL for a relative API path."""
         return _join(self.base_url, path)
+
+    def websocket_url_for(self, path: str) -> str:
+        """Build a WS/WSS URL without placing credentials in the URL."""
+        parsed = urlsplit(self.url_for(path))
+        if parsed.scheme not in ("http", "https"):
+            raise RelayTVApiError(f"Unsupported RelayTV URL scheme: {parsed.scheme or 'missing'}")
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        return urlunsplit((scheme, parsed.netloc, parsed.path, parsed.query, parsed.fragment))
 
     @property
     def auth_headers(self) -> dict[str, str]:
@@ -174,6 +183,29 @@ class RelayTVApi:
     async def get_status(self) -> dict[str, Any]:
         """Fetch current playback/status."""
         return await self._request_json("GET", "status")
+
+    async def get_realtime_capabilities(self) -> dict[str, Any]:
+        """Discover push transports, with compatibility for legacy servers."""
+        try:
+            payload = await self._request_json("GET", "realtime/capabilities")
+        except RelayTVEndpointNotFound:
+            return {
+                "protocol_version": 0,
+                "preferred_transport": "sse",
+                "websocket": {"enabled": False},
+                "sse": {"enabled": True, "ui": "/ui/events"},
+            }
+
+        websocket = payload.get("websocket")
+        sse = payload.get("sse")
+        return {
+            "protocol_version": payload.get("protocol_version"),
+            "preferred_transport": payload.get("preferred_transport"),
+            "websocket": websocket if isinstance(websocket, dict) else {"enabled": False},
+            "sse": sse if isinstance(sse, dict) else {"enabled": False},
+            "heartbeat_sec": payload.get("heartbeat_sec"),
+            "replay": payload.get("replay"),
+        }
 
     async def validate(self) -> None:
         """Validate connectivity and write authentication without changing state."""
