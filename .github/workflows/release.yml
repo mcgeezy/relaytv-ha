@@ -14,13 +14,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate release tag
+        run: |
+          manifest_version="$(python3 -c 'import json; print(json.load(open("custom_components/relaytv/manifest.json", encoding="utf-8"))["version"])')"
+          expected_tag="v${manifest_version}"
+          if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $manifest_version"
+            exit 1
+          fi
+
       - name: Create relaytv.zip for HACS
         run: |
           cd custom_components/relaytv
           zip -r ../../relaytv.zip . -x "__pycache__/*" "*/__pycache__/*" "*.pyc"
 
+      - name: Validate HACS archive layout
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+
+          with ZipFile("relaytv.zip") as archive:
+              names = archive.namelist()
+          if "manifest.json" not in names:
+              raise SystemExit("relaytv.zip must contain manifest.json at its root")
+          if any(name.startswith("relaytv/") for name in names):
+              raise SystemExit("relaytv.zip must be a flat custom-component archive")
+          PY
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
           files: relaytv.zip
