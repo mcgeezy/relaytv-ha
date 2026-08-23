@@ -277,6 +277,11 @@ ruff check custom_components tests
 python -m pytest -q
 ```
 
+Before publishing an integration release, complete the
+[release checklist](docs/RELEASE_CHECKLIST.md), including current-server,
+legacy-server, proxy fallback, reload, reconfiguration, and outage recovery
+cases.
+
 To regenerate the README images from a live Home Assistant instance:
 
 ```bash
