@@ -58,7 +58,7 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 - Snapshot requires active playback on the RelayTV server.
 - Snapshot responses are normalized to absolute URLs for Home Assistant entity attributes.
 - The integration keeps `/status` as bootstrap/fallback and does not treat either push transport as a replay log.
-- Version 0.4.0 requires Home Assistant 2026.7 or newer.
+- RelayTV HA 0.4.0 and newer require Home Assistant 2026.7 or newer.
 
 For fuller documentation and examples, see the repository root README.
 

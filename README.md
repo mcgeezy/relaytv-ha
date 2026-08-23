@@ -265,8 +265,9 @@ across origins without browser CORS errors.
 
 ## Compatibility
 
-Version 0.4.0 requires **Home Assistant 2026.7 or newer** and is automatically
-tested against Home Assistant 2026.7.2 and the current RelayTV server API.
+RelayTV HA 0.4.0 and newer require **Home Assistant 2026.7 or newer** and are
+automatically tested against Home Assistant 2026.7.2 and the current RelayTV
+server API.
 
 For local verification:
 
