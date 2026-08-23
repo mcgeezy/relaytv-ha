@@ -185,6 +185,83 @@ async def test_push_loop_falls_back_from_websocket_to_sse(hass, monkeypatch) -> 
     assert coordinator._async_sse_once.call_args.kwargs["upgrade_after"] == 300
 
 
+async def test_healthy_push_cycle_resets_backoff_before_sleep(hass, monkeypatch) -> None:
+    capabilities = {
+        "protocol_version": 1,
+        "websocket": {"enabled": True, "ui": "/ui/ws"},
+        "sse": {"enabled": False},
+    }
+    api = MagicMock(base_url="http://relaytv.local:8787")
+    api.get_realtime_capabilities = AsyncMock(
+        side_effect=[
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            RuntimeError("offline"),
+            capabilities,
+        ]
+    )
+    coordinator = RelayTVCoordinator(hass=hass, api=api)
+    coordinator._push_generation = 1
+    coordinator._async_websocket_once = AsyncMock(return_value=True)
+    delays: list[float] = []
+
+    async def record_delay(delay: float) -> None:
+        delays.append(delay)
+        if len(delays) == 6:
+            coordinator._push_generation += 1
+
+    monkeypatch.setattr(asyncio, "sleep", record_delay)
+    await coordinator._async_push_loop(1)
+
+    assert delays == [1.0, 2.0, 4.0, 8.0, 16.0, 1.0]
+    coordinator._async_websocket_once.assert_awaited_once()
+
+
+async def test_push_loop_rediscovers_capabilities_after_legacy_sse_cycle(hass, monkeypatch) -> None:
+    api = MagicMock(base_url="http://relaytv.local:8787")
+    api.get_realtime_capabilities = AsyncMock(
+        side_effect=[
+            {
+                "protocol_version": 0,
+                "websocket": {"enabled": False},
+                "sse": {"enabled": True, "ui": "/ui/events"},
+            },
+            {
+                "protocol_version": 1,
+                "websocket": {"enabled": True, "ui": "/ui/ws"},
+                "sse": {"enabled": False},
+            },
+        ]
+    )
+    coordinator = RelayTVCoordinator(hass=hass, api=api)
+    coordinator._push_generation = 1
+    coordinator._async_websocket_once = AsyncMock(return_value=True)
+    coordinator._async_sse_once = AsyncMock(return_value=True)
+    completed_cycles = 0
+
+    async def finish_after_upgrade(_delay: float) -> None:
+        nonlocal completed_cycles
+        completed_cycles += 1
+        if completed_cycles == 2:
+            coordinator._push_generation += 1
+
+    monkeypatch.setattr(asyncio, "sleep", finish_after_upgrade)
+    await coordinator._async_push_loop(1)
+
+    assert api.get_realtime_capabilities.await_count == 2
+    coordinator._async_sse_once.assert_awaited_once_with(
+        1,
+        {"enabled": True, "ui": "/ui/events"},
+        upgrade_after=300,
+    )
+    coordinator._async_websocket_once.assert_awaited_once_with(
+        1,
+        {"enabled": True, "ui": "/ui/ws"},
+    )
+
+
 async def test_stop_retires_generation_and_closes_owned_connection(hass) -> None:
     api = MagicMock(base_url="http://relaytv.local:8787")
     coordinator = RelayTVCoordinator(hass=hass, api=api)

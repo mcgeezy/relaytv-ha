@@ -522,12 +522,14 @@ class RelayTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sse_healthy = await self._async_sse_once(
                     generation,
                     sse_config,
-                    upgrade_after=_PUSH_UPGRADE_INTERVAL_SEC if websocket_enabled else None,
+                    upgrade_after=_PUSH_UPGRADE_INTERVAL_SEC,
                 )
                 cycle_was_healthy = cycle_was_healthy or sse_healthy
 
             self._set_push_enabled(False, generation=generation)
             if not self._owns_generation(generation):
                 return
-            await asyncio.sleep(backoff)
+            capabilities = None
+            retry_delay = 1.0 if cycle_was_healthy else backoff
             backoff = 1.0 if cycle_was_healthy else min(backoff * 2.0, 30.0)
+            await asyncio.sleep(retry_delay)
