@@ -4,8 +4,8 @@ Use this checklist before publishing a HACS release of the RelayTV integration.
 
 ## Automated readiness
 
-1. Confirm `custom_components/relaytv/manifest.json`, `RELEASE_NOTES.md`, and
-   the intended release version agree.
+1. Confirm `custom_components/relaytv/manifest.json`, `CHANGELOG.md`,
+   `RELEASE_NOTES.md`, and the intended release version agree.
 2. Run the local quality gates:
 
    ```bash
@@ -60,9 +60,46 @@ debug logging after verification.
 
 ## Publication
 
+Releases are tag-driven. Merging a feature or release-preparation pull request
+does not publish a release. The `Release` workflow runs only after an explicit
+`v*` tag is pushed, validates that the tag matches the manifest version, builds
+the flat HACS archive, and creates the GitHub Release from `RELEASE_NOTES.md`.
+
 1. Review release notes for user impact, operator impact, compatibility,
    breaking changes, and tests run.
-2. Tag only the reviewed release commit according to the repository release
-   process.
-3. Confirm the GitHub Release contains `relaytv.zip` and that a clean HACS
-   install plus Home Assistant restart loads the integration successfully.
+2. Merge every intended change and wait for test, Hassfest, and HACS validation
+   workflows to pass on `main`.
+3. Resolve and inspect the exact green `main` commit. Do not tag an unmerged
+   feature branch:
+
+   ```bash
+   git fetch origin --tags
+   git switch main
+   git pull --ff-only origin main
+   git status --short --branch
+   git log -1 --oneline
+   ```
+
+4. Confirm `vX.Y.Z` does not already exist and matches the manifest's `X.Y.Z`,
+   then create an annotated tag on the reviewed commit and push only that tag:
+
+   ```bash
+   git tag --list vX.Y.Z
+   git tag -a vX.Y.Z <green-main-sha> -m "RelayTV Home Assistant X.Y.Z"
+   git show --no-patch --decorate vX.Y.Z
+   git push origin refs/tags/vX.Y.Z
+   ```
+
+5. Monitor the tag-triggered workflow and inspect the published release:
+
+   ```bash
+   gh run list --workflow Release --limit 5
+   gh release view vX.Y.Z
+   ```
+
+6. Confirm the GitHub Release contains `relaytv.zip`, `manifest.json` is at the
+   archive root, and a clean HACS install plus Home Assistant restart loads the
+   integration successfully.
+
+Never move or reuse a published release tag. If a release is wrong, fix it on
+`main` and publish a new patch version.

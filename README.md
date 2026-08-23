@@ -292,6 +292,19 @@ HA_TOKEN=<long-lived-token> node scripts/readme-screenshots.mjs \
   --ws=ws://127.0.0.1:3000/
 ```
 
+## Releases
+
+RelayTV HA releases are tag-driven. Merging a pull request does not publish a
+GitHub or HACS release; a maintainer pushes an annotated `vX.Y.Z` tag only after
+the matching manifest version is merged and all `main` checks pass. The release
+workflow rejects mismatched tags, builds the flat `relaytv.zip` HACS archive,
+and publishes it with `RELEASE_NOTES.md`.
+
+Maintainers should follow the complete
+[release checklist](docs/RELEASE_CHECKLIST.md). Published tags are immutable;
+release corrections use a new patch version rather than moving an existing
+tag.
+
 ## Support the project
 
 If RelayTV is useful to you, donations help fund continued development of the
