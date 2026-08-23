@@ -1,47 +1,47 @@
-# RelayTV HA 0.4.0
+# RelayTV HA 0.5.0
 
-This release hardens the Home Assistant integration for credential safety,
-authenticated RelayTV servers, and dependable multi-server control. It
+This release gives RelayTV media-player entities faster, more resilient local
+state updates by preferring the server's versioned WebSocket transport. It
 requires Home Assistant 2026.7 or newer.
 
 ## Highlights
 
-- Playback URLs are sanitized before being exposed as media-player state or
-  used as persisted resume keys.
-- Legacy resume data is migrated automatically, deduplicated, and capped at
-  500 entries.
-- Optional `RELAYTV_API_TOKEN` bearer authentication can be configured with a
-  masked field and recovered through Home Assistant reauthentication.
-- RelayTV API failures now surface as real Home Assistant action errors.
-- Explicit service targets can no longer fall back to another TV.
-- Sidebar target selection survives multi-entry startup ordering.
-- The media player adds native mute, correct zero-valued position/duration,
-  and a stable Home Assistant device with a configuration link.
-- Automated coverage now includes configuration flows, setup authentication,
-  URL/storage migration, targeting, panel persistence, API failures,
-  coordinator deduplication, and media properties.
+- Automatically prefers RelayTV's versioned `/ui/ws` local WebSocket.
+- Falls back to `/ui/events` SSE and then adaptive `/status` polling when a
+  server, proxy, or network path cannot sustain WebSocket connectivity.
+- Performs an authoritative refresh after sequence gaps, reconnects, and
+  RelayTV server restarts.
+- Keeps only the active configuration generation capable of publishing state
+  during unload, reconfiguration, or server switching.
+- Reports `local_push` to Home Assistant while push is supported, without
+  dropping compatibility with older RelayTV servers.
+- Keeps optional bearer authentication out of URLs and applies it consistently
+  to capability discovery and both push transports.
 
-## Security migration
+## Compatibility and deployment
 
-The integration migrates its own resume store on first startup. Home Assistant
-recorder history from an older release is intentionally left untouched. If an
-old media identifier included a Jellyfin/Emby API key, bearer token, or signed
-stream credential:
+- No configuration migration or breaking change is required.
+- RelayTV servers with realtime protocol version 1 use WebSocket first.
+- Older servers and servers returning `404` for capability discovery continue
+  through the existing SSE and polling paths.
+- Reverse proxies should permit WebSocket upgrades for `/ui/ws`; blocking them
+  is safe because the integration falls back automatically.
+- The minimum supported Home Assistant version remains 2026.7.
 
-1. Rotate the affected upstream credential.
-2. Purge old recorder history for the RelayTV media-player entity if required
-   by your security policy.
-3. Update the RelayTV server to the companion release that redacts private
-   playback fields from public status, SSE, queue, and history responses.
+Breaking changes: None.
 
-The companion server update also adds `POST /auth/check` for non-mutating token
-validation and cross-origin headers for Home Assistant thumbnail rendering.
-Older unprotected RelayTV servers remain compatible, but the current server is
-strongly recommended.
+## Verification
+
+- Ruff and the complete pytest suite pass.
+- Coverage includes capability discovery, WebSocket framing, sequence gaps,
+  WS-to-SSE-to-poll fallback, bearer headers, unload/reconfiguration ownership,
+  and compatibility with legacy RelayTV servers.
+- The integration was deployed and verified against live NUC and Raspberry Pi
+  RelayTV servers using WebSocket state updates.
 
 ## Upgrade
 
-Install 0.4.0 through HACS, restart Home Assistant, and use **Reconfigure** on
-the RelayTV integration entry if the server has `RELAYTV_API_TOKEN` enabled.
-The HACS archive remains flat, with `manifest.json` directly at the archive
-root as required for `/config/custom_components/relaytv/` installation.
+Install 0.5.0 through HACS and restart Home Assistant. Existing entries and
+optional API tokens are reused without reconfiguration. The HACS archive
+remains flat, with `manifest.json` directly at the archive root as required for
+`/config/custom_components/relaytv/` installation.

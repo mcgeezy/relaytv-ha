@@ -55,8 +55,9 @@ queue, and Jellyfin/Emby library are always one click away — without leaving
 Home Assistant.
 
 RelayTV keeps the playback engine beside the TV while Home Assistant stays the
-control plane. Live event updates keep entity state fresh, with a `/status`
-poll as the reconnect fallback.
+control plane. Home Assistant automatically prefers RelayTV's versioned local
+WebSocket, falls back to its compatible event stream, and keeps `/status`
+polling available when neither push transport is healthy.
 
 ## See it in action
 
@@ -241,8 +242,10 @@ across origins without browser CORS errors.
   inside the Home Assistant container
 - Overlay calls must include at least `text` or `image_url`
 - Snapshots require active playback on the RelayTV server
-- `/ui/events` is treated as a live push stream, not a replay log; `/status`
-  remains the reconnect/bootstrap fallback
+- Realtime capability discovery prefers `/ui/ws`, falls back to `/ui/events`,
+  and retains `/status` as the reconnect/bootstrap and outage fallback
+- Push streams are live snapshots, not replay logs; a reconnect or sequence
+  gap causes an authoritative `/status` refresh
 - Releases predating `POST /auth/check` remain compatible, but the current
   server release is recommended for public-payload redaction and cross-origin
   thumbnails
@@ -262,8 +265,9 @@ across origins without browser CORS errors.
 
 ## Compatibility
 
-Version 0.4.0 requires **Home Assistant 2026.7 or newer** and is automatically
-tested against Home Assistant 2026.7.2 and the current RelayTV server API.
+RelayTV HA 0.4.0 and newer require **Home Assistant 2026.7 or newer** and are
+automatically tested against Home Assistant 2026.7.2 and the current RelayTV
+server API.
 
 For local verification:
 

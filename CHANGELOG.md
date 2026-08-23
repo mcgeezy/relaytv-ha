@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+- Prefer RelayTV's versioned local WebSocket for media-player state updates.
+- Fall back automatically to the compatible SSE stream and then adaptive
+  `/status` polling when WebSocket connectivity is unavailable.
+- Refresh authoritative state after sequence gaps or reconnects, including
+  server restarts that reset the process-local sequence.
+- Retire stale transports during unload, reconfiguration, and server changes
+  so an old connection cannot update the replacement entry.
+- Advertise the integration as `local_push` while retaining compatibility with
+  RelayTV servers that do not expose realtime capability discovery.
+
 ## 0.4.0
 
 - Remove credentials from media-player state and stored resume keys, migrate
