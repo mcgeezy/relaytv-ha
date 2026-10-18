@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0
+
+- Add native `media_player.play_media` support for URLs and local media-source
+  files, including announcements, enqueue modes, and playlist clearing.
+- Add `relaytv.enqueue`, `relaytv.clear_queue`, `relaytv.cancel_temporary`, and
+  `relaytv.jump_to_live` services, plus playlist and preserve-current playback
+  options for existing services.
+- Insert play-next items using their stable queue IDs and honor announcement
+  and enqueue options for local uploads.
+- Expose provider, live-stream, DVR, and server-version metadata, identify
+  provider media when playback URLs are omitted, and publish DVR-only updates.
+- Clear stale metadata after playback stops and align overlay positions with
+  the RelayTV server.
+- Redact Plex tokens from media URLs and reject malformed base URL hosts and
+  ports safely.
+
 ## 0.5.0
 
 - Prefer RelayTV's versioned local WebSocket for media-player state updates.
