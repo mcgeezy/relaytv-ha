@@ -160,3 +160,88 @@ def test_websocket_url_uses_matching_secure_scheme_without_credentials(base_url:
 
     assert api.websocket_url_for("ui/ws") == expected
     assert "must-not-leak" not in api.websocket_url_for("ui/ws")
+
+
+@pytest.mark.asyncio
+async def test_smart_play_now_and_enqueue_pass_playlist_and_preserve_options() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(202, {"ok": True, "action": "playlist_import_started"}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    await api.smart_url(
+        "https://youtube.com/watch?v=1&list=PL123",
+        use_ytdlp=True,
+        cec=True,
+        playlist_mode="playlist",
+    )
+    await api.play_now(
+        "https://media.example/video.mp4",
+        preserve_current=True,
+        preserve_to="next",
+        resume_current=True,
+        playlist_mode="video",
+    )
+    await api.enqueue(
+        "https://media.example/next.mp4",
+        position="next",
+        playlist_mode="auto",
+    )
+
+    assert session.requests[0]["url"] == "http://relaytv.local:8787/smart"
+    assert session.requests[0]["json"] == {
+        "url": "https://youtube.com/watch?v=1&list=PL123",
+        "use_ytdlp": True,
+        "cec": True,
+        "playlist_mode": "playlist",
+    }
+    assert session.requests[1]["url"] == "http://relaytv.local:8787/play_now"
+    assert session.requests[1]["json"] == {
+        "url": "https://media.example/video.mp4",
+        "preserve_current": True,
+        "preserve_to": "next",
+        "resume_current": True,
+        "playlist_mode": "video",
+    }
+    assert session.requests[2]["url"] == "http://relaytv.local:8787/enqueue"
+    assert session.requests[2]["json"] == {
+        "url": "https://media.example/next.mp4",
+        "position": "next",
+        "playlist_mode": "auto",
+    }
+
+
+@pytest.mark.asyncio
+async def test_play_now_falls_back_to_play_on_404_and_overlay_normalizes_center() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(404, {"detail": "not found"}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"ok": True}),
+            FakeResponse(200, {"release_version": "0.11.2"}),
+        ]
+    )
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    await api.play_now("https://media.example/video.mp4", use_ytdlp=False, preserve_current=True)
+    await api.overlay(text="Doorbell", position="center")
+    await api.clear_queue()
+    await api.cancel_temporary_playback()
+    await api.jump_to_live()
+    info = await api.get_app_info()
+
+    assert session.requests[0]["url"] == "http://relaytv.local:8787/play_now"
+    assert session.requests[1]["url"] == "http://relaytv.local:8787/play"
+    assert session.requests[1]["json"] == {"url": "https://media.example/video.mp4", "use_ytdlp": False}
+    assert session.requests[2]["json"] == {"text": "Doorbell", "position": "top-center"}
+    assert session.requests[3]["url"] == "http://relaytv.local:8787/clear"
+    assert session.requests[4]["url"] == "http://relaytv.local:8787/play_temporary/cancel"
+    assert session.requests[5]["url"] == "http://relaytv.local:8787/playback/live"
+    assert info == {"release_version": "0.11.2"}

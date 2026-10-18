@@ -5,9 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlparse
+from pathlib import Path
 from typing import Any, Optional
 
-from homeassistant.components.media_player import MediaPlayerEntity
+from homeassistant.components import media_source
+from homeassistant.components.media_player import (
+    MediaPlayerEnqueue,
+    MediaPlayerEntity,
+    MediaType,
+    async_process_play_media_url,
+)
 from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -19,7 +26,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DATA_API, DATA_COORDINATOR, DATA_LAST_SNAPSHOT_URL, DOMAIN
+from .const import DATA_API, DATA_APP_INFO, DATA_COORDINATOR, DATA_LAST_SNAPSHOT_URL, DOMAIN
 from .url_utils import sanitize_url
 
 
@@ -65,7 +72,11 @@ class _StatusView:
     duration: Optional[float] = None
     title: Optional[str] = None
     url: Optional[str] = None
+    content_id: Optional[str] = None
     thumbnail: Optional[str] = None
+    provider: Optional[str] = None
+    is_live: Optional[bool] = None
+    dvr: Optional[dict[str, Any]] = None
 
 
 def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
@@ -95,11 +106,20 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
     np = data.get("now_playing") or data.get("media") or {}
     title = None
     url = None
+    fallback_id = None
+    provider = None
+    is_live = None
     if isinstance(np, dict):
         title = np.get("title") or np.get("name")
         url = np.get("url") or np.get("input")
+        fallback_id = np.get("iptv_channel_id") or np.get("plex_rating_key") or np.get("jellyfin_item_id")
+        if np.get("provider"):
+            provider = str(np.get("provider")).strip() or None
+        if np.get("is_live") is not None:
+            is_live = bool(np.get("is_live"))
     title = title or data.get("title")
     url = url or data.get("url")
+    content_id = sanitize_url(url) or (str(fallback_id).strip() if fallback_id else None)
 
     # Prefer locally cached thumbnails when present (RelayTV serves /thumbs/<id>.jpg)
     thumb = None
@@ -120,6 +140,9 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
         or data.get("art")
     )
 
+    raw_dvr = data.get("dvr")
+    dvr = raw_dvr if isinstance(raw_dvr, dict) else None
+
     return _StatusView(
         playing=playing,
         paused=paused,
@@ -129,7 +152,11 @@ def _parse_status(data: Optional[dict[str, Any]]) -> _StatusView:
         duration=duration,
         title=title,
         url=url,
+        content_id=content_id,
         thumbnail=thumb,
+        provider=provider,
+        is_live=is_live,
+        dvr=dvr,
     )
 
 
@@ -141,7 +168,8 @@ async def async_setup_entry(
     store = hass.data[DOMAIN][entry.entry_id]
     coordinator = store[DATA_COORDINATOR]
     api = store[DATA_API]
-    async_add_entities([RelayTVMediaPlayer(entry, coordinator, api)])
+    app_info = store.get(DATA_APP_INFO)
+    async_add_entities([RelayTVMediaPlayer(entry, coordinator, api, app_info=app_info)])
 
 
 class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
@@ -150,18 +178,26 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     _attr_has_entity_name = True
     _attr_name = None
 
-    def __init__(self, entry: ConfigEntry, coordinator, api) -> None:
+    def __init__(self, entry: ConfigEntry, coordinator, api, *, app_info: dict[str, Any] | None = None) -> None:
         super().__init__(coordinator)
         self._entry = entry
         self._api = api
         self._attr_unique_id = f"{entry.entry_id}_player"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.data.get(CONF_NAME, entry.title),
-            manufacturer="RelayTV",
-            model="RelayTV server",
-            configuration_url=api.base_url,
-        )
+        sw_version = None
+        if isinstance(app_info, dict):
+            raw_ver = app_info.get("release_version") or app_info.get("version")
+            if raw_ver:
+                sw_version = str(raw_ver)
+        device_kwargs: dict[str, Any] = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": entry.data.get(CONF_NAME, entry.title),
+            "manufacturer": "RelayTV",
+            "model": "RelayTV server",
+            "configuration_url": api.base_url,
+        }
+        if sw_version:
+            device_kwargs["sw_version"] = sw_version
+        self._attr_device_info = DeviceInfo(**device_kwargs)
 
         self._attr_supported_features = (
             MediaPlayerEntityFeature.PLAY
@@ -174,6 +210,9 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             | MediaPlayerEntityFeature.VOLUME_MUTE
             | MediaPlayerEntityFeature.TURN_ON
             | MediaPlayerEntityFeature.TURN_OFF
+            | MediaPlayerEntityFeature.PLAY_MEDIA
+            | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+            | MediaPlayerEntityFeature.CLEAR_PLAYLIST
         )
 
     @property
@@ -183,8 +222,8 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             return MediaPlayerState.PLAYING
         if v.paused:
             return MediaPlayerState.PAUSED
-        # If we have a title/url but not playing, treat as idle.
-        if v.title or v.url:
+        # If we have a title/url/content_id but not playing, treat as idle.
+        if v.title or v.url or v.content_id:
             return MediaPlayerState.IDLE
         return MediaPlayerState.OFF
 
@@ -208,7 +247,7 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def media_content_id(self) -> Optional[str]:
-        return sanitize_url(_parse_status(self.coordinator.data).url) or None
+        return _parse_status(self.coordinator.data).content_id
 
     @property
     def media_duration(self) -> Optional[float]:
@@ -225,14 +264,21 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         # between updates.
         return self.coordinator.position_updated_at
 
-
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs: dict[str, Any] = {}
-        store = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
-        snapshot_url = store.get(DATA_LAST_SNAPSHOT_URL)
-        if snapshot_url:
-            attrs["snapshot_url"] = snapshot_url
+        if self.hass is not None:
+            store = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+            snapshot_url = store.get(DATA_LAST_SNAPSHOT_URL)
+            if snapshot_url:
+                attrs["snapshot_url"] = snapshot_url
+        v = _parse_status(self.coordinator.data)
+        if v.provider:
+            attrs["provider"] = v.provider
+        if v.is_live is not None:
+            attrs["is_live"] = v.is_live
+        if v.dvr:
+            attrs["dvr"] = v.dvr
         return attrs
 
     @property
@@ -284,4 +330,46 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_media_seek(self, position: float) -> None:
         await self._api.seek_abs(float(position))
+        await self.coordinator.async_request_refresh()
+
+    async def async_clear_playlist(self) -> None:
+        await self._api.clear_queue()
+        await self.coordinator.async_request_refresh()
+
+    async def async_play_media(
+        self,
+        media_type: MediaType | str,
+        media_id: str,
+        enqueue: MediaPlayerEnqueue | None = None,
+        announce: bool | None = None,
+        **kwargs: Any,
+    ) -> None:
+        target_url = (media_id or "").strip()
+        if not target_url:
+            return
+
+        if self.hass is not None and media_source.is_media_source_id(target_url):
+            resolved = await media_source.async_resolve_media(self.hass, target_url, self.entity_id)
+            if resolved.path is not None:
+                local_path = str(resolved.path)
+                is_file = await self.hass.async_add_executor_job(Path(local_path).is_file)
+                if is_file:
+                    if enqueue in (MediaPlayerEnqueue.ADD, MediaPlayerEnqueue.NEXT):
+                        await self._api.upload_media_enqueue(local_path)
+                    else:
+                        await self._api.upload_media_play(local_path)
+                    await self.coordinator.async_request_refresh()
+                    return
+            target_url = async_process_play_media_url(self.hass, resolved.url)
+
+        if announce:
+            await self._api.play_temporary(url=target_url)
+        elif enqueue == MediaPlayerEnqueue.ADD:
+            await self._api.enqueue(target_url, position="end")
+        elif enqueue == MediaPlayerEnqueue.NEXT:
+            await self._api.enqueue(target_url, position="next")
+        elif enqueue == MediaPlayerEnqueue.PLAY:
+            await self._api.play_now(target_url, preserve_current=True)
+        else:
+            await self._api.play(target_url)
         await self.coordinator.async_request_refresh()

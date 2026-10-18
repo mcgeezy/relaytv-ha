@@ -184,6 +184,13 @@ class RelayTVApi:
         """Fetch current playback/status."""
         return await self._request_json("GET", "status")
 
+    async def get_app_info(self) -> dict[str, Any]:
+        """Fetch server version metadata when supported by the server."""
+        try:
+            return await self._request_json("GET", "app/info")
+        except RelayTVEndpointNotFound:
+            return {}
+
     async def get_realtime_capabilities(self) -> dict[str, Any]:
         """Discover push transports, with compatibility for legacy servers."""
         try:
@@ -217,9 +224,23 @@ class RelayTVApi:
             # disabled. Protected older servers reject this before route lookup.
             return
 
-    async def smart_url(self, url: str) -> bool:
+    async def smart_url(
+        self,
+        url: str,
+        *,
+        use_ytdlp: bool | None = None,
+        cec: bool | None = None,
+        playlist_mode: str | None = None,
+    ) -> bool:
         """RelayTV one-button behavior (POST /smart)."""
-        await self._request_json("POST", "smart", json={"url": url})
+        payload: dict[str, Any] = {"url": url}
+        if use_ytdlp is not None:
+            payload["use_ytdlp"] = bool(use_ytdlp)
+        if cec is not None:
+            payload["cec"] = bool(cec)
+        if playlist_mode:
+            payload["playlist_mode"] = str(playlist_mode)
+        await self._request_json("POST", "smart", json=payload)
         return True
 
     async def play(self, url: str, *, use_ytdlp: bool | None = None, cec: bool | None = None) -> bool:
@@ -232,9 +253,56 @@ class RelayTVApi:
         await self._request_json("POST", "play", json=payload)
         return True
 
-    async def enqueue(self, url: str) -> bool:
-        """Add an item to the end of the queue (POST /enqueue)."""
-        await self._request_json("POST", "enqueue", json={"url": url})
+    async def play_now(
+        self,
+        url: str,
+        *,
+        use_ytdlp: bool | None = None,
+        cec: bool | None = None,
+        preserve_current: bool | None = None,
+        preserve_to: str | None = None,
+        resume_current: bool | None = None,
+        playlist_mode: str | None = None,
+    ) -> bool:
+        """Play immediately while optionally preserving the current item (POST /play_now)."""
+        payload: dict[str, Any] = {"url": url}
+        if use_ytdlp is not None:
+            payload["use_ytdlp"] = bool(use_ytdlp)
+        if cec is not None:
+            payload["cec"] = bool(cec)
+        if preserve_current is not None:
+            payload["preserve_current"] = bool(preserve_current)
+        if preserve_to:
+            payload["preserve_to"] = str(preserve_to)
+        if resume_current is not None:
+            payload["resume_current"] = bool(resume_current)
+        if playlist_mode:
+            payload["playlist_mode"] = str(playlist_mode)
+        try:
+            await self._request_json("POST", "play_now", json=payload)
+        except RelayTVEndpointNotFound:
+            await self.play(url, use_ytdlp=use_ytdlp, cec=cec)
+        return True
+
+    async def enqueue(
+        self,
+        url: str,
+        *,
+        position: str | None = None,
+        playlist_mode: str | None = None,
+    ) -> bool:
+        """Add an item to the queue (POST /enqueue)."""
+        payload: dict[str, Any] = {"url": url}
+        if position:
+            payload["position"] = str(position)
+        if playlist_mode:
+            payload["playlist_mode"] = str(playlist_mode)
+        await self._request_json("POST", "enqueue", json=payload)
+        return True
+
+    async def clear_queue(self) -> bool:
+        """Clear the playback queue (POST /clear)."""
+        await self._request_json("POST", "clear", json={})
         return True
 
     async def upload_media(self, path: str, *, title: str | None = None) -> Optional[dict[str, Any]]:
@@ -266,6 +334,16 @@ class RelayTVApi:
         await self._request_json("POST", "play_temporary", json=payload)
         return True
 
+    async def cancel_temporary_playback(self) -> bool:
+        """Abort an active temporary playback interruption (POST /play_temporary/cancel)."""
+        await self._request_json("POST", "play_temporary/cancel", json={})
+        return True
+
+    async def jump_to_live(self) -> bool:
+        """Jump an active DVR-capable live stream back to the live edge (POST /playback/live)."""
+        await self._request_json("POST", "playback/live", json={})
+        return True
+
     async def overlay(
         self,
         *,
@@ -280,7 +358,7 @@ class RelayTVApi:
         if duration is not None:
             payload["duration"] = float(duration)
         if position:
-            payload["position"] = position
+            payload["position"] = "top-center" if position == "center" else position
         if image_url:
             payload["image_url"] = image_url
         await self._request_json("POST", "overlay", json=payload)

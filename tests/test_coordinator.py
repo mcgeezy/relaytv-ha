@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 
-from custom_components.relaytv.coordinator import RelayTVCoordinator, _material_state_view
+from custom_components.relaytv.coordinator import (
+    RelayTVCoordinator,
+    _material_state_view,
+    _merge_playback_snapshot,
+)
 
 
 def test_idle_snapshots_ignore_stale_audio_properties() -> None:
@@ -22,6 +26,46 @@ def test_playing_snapshots_track_audio_properties() -> None:
     second = {"playing": True, "paused": False, "volume": 30, "mute": True}
 
     assert _material_state_view(first) != _material_state_view(second)
+
+
+def test_merge_playback_snapshot_clears_stale_now_playing_when_stopped() -> None:
+    current = {
+        "state": "playing",
+        "playing": True,
+        "paused": False,
+        "has_now_playing": True,
+        "title": "Old Show",
+        "url": "https://media.example/show.mp4",
+        "now_playing": {"title": "Old Show", "url": "https://media.example/show.mp4"},
+    }
+    stopped_playback = {
+        "state": "idle",
+        "playing": False,
+        "paused": False,
+        "has_now_playing": False,
+    }
+
+    merged = _merge_playback_snapshot(current, stopped_playback)
+
+    assert merged is not None
+    assert merged["now_playing"] is None
+    assert "title" not in merged
+    assert "url" not in merged
+
+
+def test_material_state_view_tracks_iptv_channel_switches_without_url() -> None:
+    ch1 = {
+        "playing": True,
+        "paused": False,
+        "now_playing": {"provider": "iptv", "title": "News", "is_live": True, "iptv_channel_id": "ch-1"},
+    }
+    ch2 = {
+        "playing": True,
+        "paused": False,
+        "now_playing": {"provider": "iptv", "title": "News", "is_live": True, "iptv_channel_id": "ch-2"},
+    }
+
+    assert _material_state_view(ch1) != _material_state_view(ch2)
 
 
 async def test_note_position_update_stamps_only_position_changes(hass) -> None:
