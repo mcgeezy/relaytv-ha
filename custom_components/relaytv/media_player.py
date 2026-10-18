@@ -22,6 +22,7 @@ from homeassistant.components.media_player.const import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -354,13 +355,19 @@ class RelayTVMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
                 local_path = str(resolved.path)
                 is_file = await self.hass.async_add_executor_job(Path(local_path).is_file)
                 if is_file:
-                    if enqueue in (MediaPlayerEnqueue.ADD, MediaPlayerEnqueue.NEXT):
-                        await self._api.upload_media_enqueue(local_path)
-                    else:
+                    if not announce and enqueue in (None, MediaPlayerEnqueue.REPLACE):
                         await self._api.upload_media_play(local_path)
-                    await self.coordinator.async_request_refresh()
-                    return
-            target_url = async_process_play_media_url(self.hass, resolved.url)
+                        await self.coordinator.async_request_refresh()
+                        return
+                    uploaded = await self._api.upload_media(local_path)
+                    uploaded_url = uploaded.get("url") if isinstance(uploaded, dict) else None
+                    if not isinstance(uploaded_url, str) or not uploaded_url.strip():
+                        raise ServiceValidationError("RelayTV media upload did not return a playable URL")
+                    target_url = _abs_url(self._api.base_url, uploaded_url)
+                else:
+                    target_url = async_process_play_media_url(self.hass, resolved.url)
+            else:
+                target_url = async_process_play_media_url(self.hass, resolved.url)
 
         if announce:
             await self._api.play_temporary(url=target_url)

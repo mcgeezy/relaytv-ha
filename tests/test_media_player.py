@@ -1,9 +1,13 @@
 """Tests for RelayTV media-player behavior."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from homeassistant.components.media_player import MediaPlayerEnqueue
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature, MediaPlayerState
+from homeassistant.components.media_source.models import PlayMedia
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.relaytv.media_player import RelayTVMediaPlayer, _parse_status
@@ -119,3 +123,86 @@ async def test_media_player_handles_iptv_live_stream_without_url_and_play_media(
 
     await player.async_clear_playlist()
     api.clear_queue.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize(
+    ("options", "method", "expected_kwargs"),
+    [
+        ({"announce": True}, "play_temporary", {"url": "http://relaytv.local:8787/media/uploads/chime.mp3"}),
+        ({"enqueue": MediaPlayerEnqueue.ADD}, "enqueue", {"position": "end"}),
+        ({"enqueue": MediaPlayerEnqueue.NEXT}, "enqueue", {"position": "next"}),
+        ({"enqueue": MediaPlayerEnqueue.PLAY}, "play_now", {"preserve_current": True}),
+        (
+            {"announce": True, "enqueue": MediaPlayerEnqueue.ADD},
+            "play_temporary",
+            {"url": "http://relaytv.local:8787/media/uploads/chime.mp3"},
+        ),
+    ],
+)
+async def test_local_media_preserves_playback_options(hass, tmp_path, options, method, expected_kwargs) -> None:
+    local_path = tmp_path / "chime.mp3"
+    local_path.write_bytes(b"audio")
+    entry = MockConfigEntry(domain="relaytv", title="TV", data={})
+    coordinator = MagicMock(data={})
+    coordinator.async_request_refresh = AsyncMock()
+    api = MagicMock(base_url="http://relaytv.local:8787")
+    api.upload_media = AsyncMock(return_value={"url": "/media/uploads/chime.mp3"})
+    api.upload_media_play = AsyncMock()
+    api.upload_media_enqueue = AsyncMock()
+    for name in ("play", "play_temporary", "enqueue", "play_now"):
+        setattr(api, name, AsyncMock())
+    player = RelayTVMediaPlayer(entry, coordinator, api)
+    player.hass = hass
+    resolved = PlayMedia(url="/media/local/chime.mp3", mime_type="audio/mpeg", path=local_path)
+
+    with patch("custom_components.relaytv.media_player.media_source.async_resolve_media", return_value=resolved):
+        await player.async_play_media("audio", "media-source://media_source/local/chime.mp3", **options)
+
+    api.upload_media.assert_awaited_once_with(str(local_path))
+    api.upload_media_play.assert_not_awaited()
+    api.upload_media_enqueue.assert_not_awaited()
+    expected_args = () if method == "play_temporary" else ("http://relaytv.local:8787/media/uploads/chime.mp3",)
+    getattr(api, method).assert_awaited_once_with(*expected_args, **expected_kwargs)
+    coordinator.async_request_refresh.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize("upload_response", [None, {"ok": True}, {"url": " "}])
+async def test_local_media_rejects_upload_without_playable_url(hass, tmp_path, upload_response) -> None:
+    local_path = tmp_path / "chime.mp3"
+    local_path.write_bytes(b"audio")
+    entry = MockConfigEntry(domain="relaytv", title="TV", data={})
+    coordinator = MagicMock(data={})
+    api = MagicMock(base_url="http://relaytv.local:8787")
+    api.upload_media = AsyncMock(return_value=upload_response)
+    api.play_temporary = AsyncMock()
+    player = RelayTVMediaPlayer(entry, coordinator, api)
+    player.hass = hass
+    resolved = PlayMedia(url="/media/local/chime.mp3", mime_type="audio/mpeg", path=local_path)
+
+    with patch("custom_components.relaytv.media_player.media_source.async_resolve_media", return_value=resolved):
+        with pytest.raises(ServiceValidationError, match="playable URL"):
+            await player.async_play_media("audio", "media-source://media_source/local/chime.mp3", announce=True)
+
+    api.play_temporary.assert_not_awaited()
+
+
+@pytest.mark.parametrize("enqueue", [None, MediaPlayerEnqueue.REPLACE])
+async def test_local_media_replace_keeps_direct_upload_play(hass, tmp_path, enqueue) -> None:
+    local_path = tmp_path / "movie.mp4"
+    local_path.write_bytes(b"video")
+    entry = MockConfigEntry(domain="relaytv", title="TV", data={})
+    coordinator = MagicMock(data={})
+    coordinator.async_request_refresh = AsyncMock()
+    api = MagicMock(base_url="http://relaytv.local:8787")
+    api.upload_media = AsyncMock()
+    api.upload_media_play = AsyncMock(return_value={"ok": True})
+    player = RelayTVMediaPlayer(entry, coordinator, api)
+    player.hass = hass
+    resolved = PlayMedia(url="/media/local/movie.mp4", mime_type="video/mp4", path=local_path)
+
+    with patch("custom_components.relaytv.media_player.media_source.async_resolve_media", return_value=resolved):
+        await player.async_play_media("video", "media-source://media_source/local/movie.mp4", enqueue=enqueue)
+
+    api.upload_media_play.assert_awaited_once_with(str(local_path))
+    api.upload_media.assert_not_awaited()
+    coordinator.async_request_refresh.assert_awaited_once_with()

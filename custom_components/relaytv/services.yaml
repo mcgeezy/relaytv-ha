@@ -60,11 +60,11 @@ play_now:
         boolean:
     preserve_to:
       required: false
+      description: Preserve interrupted playback at the front of the queue (the server's supported destination).
       selector:
         select:
           options:
-            - next
-            - end
+            - queue_front
     resume_current:
       required: false
       selector:
@@ -94,6 +94,7 @@ enqueue:
     position:
       required: false
       default: end
+      description: Play next supports individual items. Playlist imports require end; use playlist_mode video to select one video.
       selector:
         select:
           options:

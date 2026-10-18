@@ -145,8 +145,8 @@ variables:
 | Service | RelayTV endpoint | Notes |
 | --- | --- | --- |
 | `relaytv.smart_url` | `POST /smart` | Smart play/enqueue behavior with optional `use_ytdlp`, `cec`, and `playlist_mode` (`auto`, `video`, `playlist`) |
-| `relaytv.play_now` | `POST /play` or `POST /play_now` | Immediate playback; clears queue by default or uses `POST /play_now` when `preserve_current` / `preserve_to` / `resume_current` / `playlist_mode` are provided |
-| `relaytv.enqueue` | `POST /enqueue` | Append or insert (`position: next | end`) a URL or YouTube playlist into the queue |
+| `relaytv.play_now` | `POST /play` or `POST /play_now` | Immediate playback; clears queue by default or uses `POST /play_now` when preservation or playlist options are provided; `preserve_to` supports `queue_front` |
+| `relaytv.enqueue` | `POST /enqueue`, then `POST /queue/move` for next | Append a URL or YouTube playlist; `position: next` inserts an individual item at the front |
 | `relaytv.clear_queue` | `POST /clear` | Clear the playback queue |
 | `relaytv.announce` | `POST /play` | Alias of `play_now` |
 | `relaytv.play_temporary` | `POST /play_temporary` | Temporary interrupt + resume flow |
@@ -161,6 +161,8 @@ variables:
 | `relaytv.upload_media_enqueue` | `POST /ingest/media/enqueue` | Upload local HA media/file and append to queue |
 
 Standard Home Assistant `media_player.play_media` (including `enqueue: replace | add | next | play`, `announce: true`, and local `media-source://` files) and `media_player.clear_playlist` are also supported natively on the entity.
+
+Playlist imports support `position: end`. To enqueue one video from a YouTube playlist link as next, set `playlist_mode: video`. Local-file announcements resume the previous playback after the announcement, and local files honor the requested enqueue mode.
 
 ### Example service calls
 

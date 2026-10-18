@@ -114,6 +114,7 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
         thumbnail,
         str(np.get("provider") or ""),
         None if np.get("is_live") is None else bool(np.get("is_live")),
+        json.dumps(data["dvr"], sort_keys=True) if isinstance(data.get("dvr"), dict) else None,
     )
 
 

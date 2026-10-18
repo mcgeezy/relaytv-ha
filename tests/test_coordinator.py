@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
+import pytest
 
 from custom_components.relaytv.coordinator import (
     RelayTVCoordinator,
@@ -66,6 +67,37 @@ def test_material_state_view_tracks_iptv_channel_switches_without_url() -> None:
     }
 
     assert _material_state_view(ch1) != _material_state_view(ch2)
+
+
+@pytest.mark.parametrize("event", ["status", "playback"])
+@pytest.mark.parametrize(
+    "dvr",
+    [
+        {"active": True, "at_live_edge": False, "behind_live_sec": 30.0},
+        {"active": True, "at_live_edge": True, "behind_live_sec": 0.0},
+        None,
+    ],
+)
+async def test_push_updates_dvr_attributes_while_paused(hass, event, dvr) -> None:
+    coordinator = RelayTVCoordinator(hass=hass, api=MagicMock(base_url="http://relaytv.local:8787"))
+    current = {
+        "playing": False,
+        "paused": True,
+        "position": 10.0,
+        "dvr": {"active": True, "at_live_edge": False, "behind_live_sec": 15.0},
+    }
+    coordinator.data = current
+    listener = MagicMock()
+    unsubscribe = coordinator.async_add_listener(listener)
+    try:
+        await coordinator._async_dispatch_event(event, {**current, "dvr": dvr})
+        assert coordinator.data["dvr"] == dvr
+        listener.assert_called_once_with()
+
+        await coordinator._async_dispatch_event(event, {**current, "dvr": dvr})
+        listener.assert_called_once_with()
+    finally:
+        unsubscribe()
 
 
 async def test_note_position_update_stamps_only_position_changes(hass) -> None:

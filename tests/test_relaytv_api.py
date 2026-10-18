@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.relaytv.relaytv_api import (
     RelayTVApi,
+    RelayTVApiError,
     RelayTVAuthError,
     RelayTVResponseError,
 )
@@ -182,13 +183,13 @@ async def test_smart_play_now_and_enqueue_pass_playlist_and_preserve_options() -
     await api.play_now(
         "https://media.example/video.mp4",
         preserve_current=True,
-        preserve_to="next",
+        preserve_to="queue_front",
         resume_current=True,
         playlist_mode="video",
     )
     await api.enqueue(
         "https://media.example/next.mp4",
-        position="next",
+        position="end",
         playlist_mode="auto",
     )
 
@@ -203,16 +204,102 @@ async def test_smart_play_now_and_enqueue_pass_playlist_and_preserve_options() -
     assert session.requests[1]["json"] == {
         "url": "https://media.example/video.mp4",
         "preserve_current": True,
-        "preserve_to": "next",
+        "preserve_to": "queue_front",
         "resume_current": True,
         "playlist_mode": "video",
     }
     assert session.requests[2]["url"] == "http://relaytv.local:8787/enqueue"
     assert session.requests[2]["json"] == {
         "url": "https://media.example/next.mp4",
-        "position": "next",
         "playlist_mode": "auto",
     }
+
+
+@pytest.mark.parametrize("preserve_to", ["next", "end"])
+async def test_play_now_rejects_unsupported_preservation_before_request(preserve_to) -> None:
+    session = FakeSession([])
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    with pytest.raises(RelayTVApiError, match="queue_front"):
+        await api.play_now("https://media.example/video.mp4", preserve_current=True, preserve_to=preserve_to)
+
+    assert not session.requests
+
+
+@pytest.mark.parametrize("existing_count", [0, 2])
+async def test_enqueue_next_moves_the_new_queue_instance_to_front(existing_count) -> None:
+    url = "https://media.example/video.mp4"
+
+    class QueueSession:
+        # Match the server: /enqueue always appends and ignores unknown fields.
+        def __init__(self):
+            self.queue = [{"url": url, "queue_id": f"existing-{i}"} for i in range(existing_count)]
+            self.requests = []
+
+        def request(self, method, request_url, **kwargs):
+            payload = kwargs["json"]
+            self.requests.append({"method": method, "url": request_url, "json": payload})
+            if request_url.endswith("/enqueue"):
+                item = {"url": payload["url"], "queue_id": "new-item"}
+                self.queue.append(item)
+                return FakeResponse(200, {"item": item, "queue_length": len(self.queue)})
+            assert request_url.endswith("/queue/move")
+            assert payload == {"queue_id": "new-item", "to_index": 0}
+            index = next(i for i, item in enumerate(self.queue) if item["queue_id"] == payload["queue_id"])
+            self.queue.insert(payload["to_index"], self.queue.pop(index))
+            return FakeResponse(200, {"queue": list(self.queue)})
+
+    session = QueueSession()
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    await api.enqueue(url, position="next")
+
+    assert [item["queue_id"] for item in session.queue] == [
+        "new-item", *(f"existing-{i}" for i in range(existing_count))
+    ]
+    assert "position" not in session.requests[0]["json"]
+
+
+@pytest.mark.parametrize(
+    ("url", "playlist_mode"),
+    [
+        ("https://youtube.com/playlist?list=PL123", None),
+        ("https://www.youtube.com/watch?v=1&list=PL123", "auto"),
+        ("https://youtu.be/1?list=PL123", None),
+        ("https://youtube.com/watch?v=1&list=PL123", "playlist"),
+    ],
+)
+async def test_enqueue_next_rejects_playlist_import_before_request(url, playlist_mode) -> None:
+    session = FakeSession([])
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    with pytest.raises(RelayTVApiError, match="playlist"):
+        await api.enqueue(url, position="next", playlist_mode=playlist_mode)
+
+    assert not session.requests
+
+
+async def test_enqueue_next_allows_single_video_from_playlist() -> None:
+    session = FakeSession([
+        FakeResponse(200, {"item": {"queue_id": "new-item"}, "queue_length": 2}),
+        FakeResponse(200, {"status": "moved"}),
+    ])
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    await api.enqueue("https://youtube.com/watch?v=1&list=PL123", position="next", playlist_mode="video")
+
+    assert session.requests[0]["json"]["playlist_mode"] == "video"
+    assert session.requests[1]["json"] == {"queue_id": "new-item", "to_index": 0}
+
+
+async def test_enqueue_next_does_not_move_an_arbitrary_item_when_id_is_missing() -> None:
+    session = FakeSession([FakeResponse(200, {"item": {"url": "https://media.example/video.mp4"}, "queue_length": 2})])
+    api = RelayTVApi(session, "http://relaytv.local:8787")
+
+    with pytest.raises(RelayTVApiError, match="queue ID"):
+        await api.enqueue("https://media.example/video.mp4", position="next")
+
+    assert len(session.requests) == 1
 
 
 @pytest.mark.asyncio

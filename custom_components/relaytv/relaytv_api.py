@@ -29,7 +29,7 @@ import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import aiohttp
 
@@ -265,6 +265,8 @@ class RelayTVApi:
         playlist_mode: str | None = None,
     ) -> bool:
         """Play immediately while optionally preserving the current item (POST /play_now)."""
+        if preserve_to is not None and preserve_to != "queue_front":
+            raise RelayTVApiError("RelayTV only supports preserve_to: queue_front")
         payload: dict[str, Any] = {"url": url}
         if use_ytdlp is not None:
             payload["use_ytdlp"] = bool(use_ytdlp)
@@ -292,12 +294,32 @@ class RelayTVApi:
         playlist_mode: str | None = None,
     ) -> bool:
         """Add an item to the queue (POST /enqueue)."""
+        if position not in (None, "end", "next"):
+            raise RelayTVApiError("RelayTV queue position must be next or end")
+        if position == "next" and playlist_mode != "video":
+            parsed = urlsplit(url if "://" in url else f"https://{url}")
+            host = (parsed.hostname or "").lower().rstrip(".")
+            youtube = any(
+                host == domain or host.endswith(f".{domain}")
+                for domain in ("youtube.com", "youtu.be", "youtube-nocookie.com")
+            )
+            if playlist_mode == "playlist" or (youtube and "list" in parse_qs(parsed.query, keep_blank_values=True)):
+                raise RelayTVApiError(
+                    "Play-next does not support playlist imports; use position: end, "
+                    "or playlist_mode: video for an individual video"
+                )
         payload: dict[str, Any] = {"url": url}
-        if position:
-            payload["position"] = str(position)
         if playlist_mode:
             payload["playlist_mode"] = str(playlist_mode)
-        await self._request_json("POST", "enqueue", json=payload)
+        result = await self._request_json("POST", "enqueue", json=payload)
+        if position == "next":
+            # /enqueue always appends. Move the exact new instance, rather than
+            # an index that may now refer to another item after queue changes.
+            item = result.get("item")
+            queue_id = item.get("queue_id") if isinstance(item, dict) else None
+            if not queue_id:
+                raise RelayTVApiError("RelayTV appended the item but did not return a queue ID for play-next")
+            await self._request_json("POST", "queue/move", json={"queue_id": queue_id, "to_index": 0})
         return True
 
     async def clear_queue(self) -> bool:
