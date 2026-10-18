@@ -59,7 +59,15 @@ def _extract_media_fields(data: dict[str, Any]) -> tuple[str, str, str]:
     np = now_playing if isinstance(now_playing, dict) else {}
 
     title = str(np.get("title") or np.get("name") or data.get("title") or "")
-    url = str(np.get("url") or np.get("input") or data.get("url") or "")
+    url = str(
+        np.get("url")
+        or np.get("input")
+        or data.get("url")
+        or np.get("iptv_channel_id")
+        or np.get("plex_rating_key")
+        or np.get("jellyfin_item_id")
+        or ""
+    )
     thumbnail = str(
         np.get("thumbnail_local")
         or np.get("thumbnail")
@@ -81,25 +89,32 @@ def _material_state_view(data: dict[str, Any] | None) -> tuple[Any, ...] | None:
     if not isinstance(data, dict):
         return None
 
+    now_playing = data.get("now_playing")
+    np = now_playing if isinstance(now_playing, dict) else {}
     title, url, thumbnail = _extract_media_fields(data)
     has_now_playing = data.get("has_now_playing")
     if has_now_playing is None:
         has_now_playing = bool(url or title)
     playing = bool(data.get("playing"))
+    paused = bool(data.get("paused"))
+    active_session = playing or paused
 
     return (
         str(data.get("state") or ""),
         playing,
-        bool(data.get("paused")),
+        paused,
         int(data.get("queue_length") or 0),
         bool(has_now_playing),
         _rounded_int(data.get("duration")),
         _position_bucket(data),
-        _rounded_int(data.get("volume")) if playing else None,
-        (None if data.get("mute") is None else bool(data.get("mute"))) if playing else None,
+        _rounded_int(data.get("volume")) if active_session else None,
+        (None if data.get("mute") is None else bool(data.get("mute"))) if active_session else None,
         title,
         url,
         thumbnail,
+        str(np.get("provider") or ""),
+        None if np.get("is_live") is None else bool(np.get("is_live")),
+        json.dumps(data["dvr"], sort_keys=True) if isinstance(data.get("dvr"), dict) else None,
     )
 
 
@@ -115,6 +130,9 @@ def _apply_if_material_change(
     return True
 
 
+_TOP_LEVEL_MEDIA_KEYS = ("title", "url", "thumbnail", "thumbnail_local", "image", "art", "media")
+
+
 def _merge_playback_snapshot(current: dict[str, Any] | None, payload: dict[str, Any]) -> dict[str, Any] | None:
     """Overlay compact playback-state fields onto the last full status payload."""
     if not isinstance(current, dict):
@@ -122,6 +140,11 @@ def _merge_playback_snapshot(current: dict[str, Any] | None, payload: dict[str, 
 
     merged = dict(current)
     merged.update(payload)
+    if payload.get("has_now_playing") is False and "now_playing" not in payload:
+        merged["now_playing"] = None
+        for key in _TOP_LEVEL_MEDIA_KEYS:
+            if key not in payload:
+                merged.pop(key, None)
     return merged
 
 

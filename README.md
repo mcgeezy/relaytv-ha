@@ -144,17 +144,25 @@ variables:
 
 | Service | RelayTV endpoint | Notes |
 | --- | --- | --- |
-| `relaytv.smart_url` | `POST /smart` | Smart play/enqueue behavior |
-| `relaytv.play_now` | `POST /play` | Immediate playback; clears queue |
+| `relaytv.smart_url` | `POST /smart` | Smart play/enqueue behavior with optional `use_ytdlp`, `cec`, and `playlist_mode` (`auto`, `video`, `playlist`) |
+| `relaytv.play_now` | `POST /play` or `POST /play_now` | Immediate playback; clears queue by default or uses `POST /play_now` when preservation or playlist options are provided; `preserve_to` supports `queue_front` |
+| `relaytv.enqueue` | `POST /enqueue`, then `POST /queue/move` for next | Append a URL or YouTube playlist; `position: next` inserts an individual item at the front |
+| `relaytv.clear_queue` | `POST /clear` | Clear the playback queue |
 | `relaytv.announce` | `POST /play` | Alias of `play_now` |
 | `relaytv.play_temporary` | `POST /play_temporary` | Temporary interrupt + resume flow |
-| `relaytv.overlay` | `POST /overlay` | Text/image overlay |
+| `relaytv.cancel_temporary` | `POST /play_temporary/cancel` | Abort an active temporary playback interruption and restore previous media |
+| `relaytv.jump_to_live` | `POST /playback/live` | Jump an active DVR-capable live stream back to the live edge |
+| `relaytv.overlay` | `POST /overlay` | Text/image overlay (`top-left`, `top-right`, `top-center`, `bottom-left`, `bottom-right`) |
 | `relaytv.play_synced` | `POST /play_at` | Multi-entity time-aligned start |
 | `relaytv.snapshot` | `POST /snapshot` (fallback `GET /snapshot`) | Captures current frame |
 | `relaytv.play_with_resume` | `POST /play` + `POST /seek_abs` | Resume per-URL saved position |
 | `relaytv.upload_media` | `POST /ingest/media` | Upload local HA media/file and return a RelayTV media URL |
 | `relaytv.upload_media_play` | `POST /ingest/media/play` | Upload local HA media/file and start playback |
 | `relaytv.upload_media_enqueue` | `POST /ingest/media/enqueue` | Upload local HA media/file and append to queue |
+
+Standard Home Assistant `media_player.play_media` (including `enqueue: replace | add | next | play`, `announce: true`, and local `media-source://` files) and `media_player.clear_playlist` are also supported natively on the entity.
+
+Playlist imports support `position: end`. To enqueue one video from a YouTube playlist link as next, set `playlist_mode: video`. Local-file announcements resume the previous playback after the announcement, and local files honor the requested enqueue mode.
 
 ### Example service calls
 
@@ -224,7 +232,7 @@ Assistant state or resume storage. Existing resume data is migrated and limited
 to the 500 most recent media keys automatically.
 
 Home Assistant recorder history written by an older version is not rewritten. If
-a previous media identifier contained an upstream Jellyfin/Emby API key or
+a previous media identifier contained an upstream Jellyfin/Emby/Plex API key or
 signed URL, rotate that credential and consider purging old history for the
 RelayTV media-player entity.
 
@@ -235,9 +243,6 @@ across origins without browser CORS errors.
 
 ## Known limitations
 
-- `relaytv.play_now` maps to RelayTV `POST /play` (queue-clearing behavior);
-  the server's preserve-current `POST /play_now` is not yet used
-- No dedicated `clear_queue` Home Assistant service is registered
 - Upload services require a local media-source item or a file path available
   inside the Home Assistant container
 - Overlay calls must include at least `text` or `image_url`

@@ -1,20 +1,6 @@
 smart_url:
   name: Smart play URL
-  description: RelayTV one-button URL handling via POST /smart. If RelayTV is already playing, the URL is enqueued; otherwise it starts immediate playback.
-  target:
-    entity:
-      domain: media_player
-      integration: relaytv
-  fields:
-    url:
-      required: true
-      example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-      selector:
-        text:
-
-play_now:
-  name: Play now
-  description: Play a URL immediately using RelayTV POST /play. This clears the queue and does not currently use RelayTV POST /play_now preserve-current semantics.
+  description: RelayTV one-button URL handling via POST /smart. If RelayTV is already playing, the URL is enqueued; otherwise it starts immediate playback. Finite YouTube playlists are automatically imported when playlist_mode is auto or playlist.
   target:
     entity:
       domain: media_player
@@ -35,10 +21,106 @@ play_now:
       default: false
       selector:
         boolean:
+    playlist_mode:
+      required: false
+      default: auto
+      selector:
+        select:
+          options:
+            - auto
+            - video
+            - playlist
+
+play_now:
+  name: Play now
+  description: Play a URL immediately. Defaults to RelayTV POST /play (clears queue), or uses POST /play_now when preserve/playlist options are specified.
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+  fields:
+    url:
+      required: true
+      example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      selector:
+        text:
+    use_ytdlp:
+      required: false
+      default: true
+      selector:
+        boolean:
+    cec:
+      required: false
+      default: false
+      selector:
+        boolean:
+    preserve_current:
+      required: false
+      selector:
+        boolean:
+    preserve_to:
+      required: false
+      description: Preserve interrupted playback at the front of the queue (the server's supported destination).
+      selector:
+        select:
+          options:
+            - queue_front
+    resume_current:
+      required: false
+      selector:
+        boolean:
+    playlist_mode:
+      required: false
+      selector:
+        select:
+          options:
+            - auto
+            - video
+            - playlist
+
+enqueue:
+  name: Enqueue URL
+  description: Add a URL or YouTube playlist to the RelayTV playback queue (POST /enqueue).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+  fields:
+    url:
+      required: true
+      example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      selector:
+        text:
+    position:
+      required: false
+      default: end
+      description: Play next supports individual items. Playlist imports require end; use playlist_mode video to select one video.
+      selector:
+        select:
+          options:
+            - end
+            - next
+    playlist_mode:
+      required: false
+      default: auto
+      selector:
+        select:
+          options:
+            - auto
+            - video
+            - playlist
+
+clear_queue:
+  name: Clear queue
+  description: Clear the RelayTV playback queue (POST /clear).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
 
 announce:
   name: Announce
-  description: Alias for play_now. This currently uses RelayTV POST /play and does not use a distinct announcement endpoint.
+  description: Alias for play_now.
   target:
     entity:
       domain: media_player
@@ -88,6 +170,22 @@ play_temporary:
           step: 0.01
           mode: slider
 
+cancel_temporary:
+  name: Cancel temporary playback
+  description: Abort an active temporary playback interruption and restore previous media (RelayTV POST /play_temporary/cancel).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+
+jump_to_live:
+  name: Jump to live
+  description: Jump an active DVR-capable live stream back to the live edge (RelayTV POST /playback/live).
+  target:
+    entity:
+      domain: media_player
+      integration: relaytv
+
 overlay:
   name: Overlay
   description: Display text/image overlay without interrupting playback (RelayTV POST /overlay).
@@ -114,9 +212,9 @@ overlay:
           options:
             - top-left
             - top-right
+            - top-center
             - bottom-left
             - bottom-right
-            - center
     image_url:
       required: false
       selector:

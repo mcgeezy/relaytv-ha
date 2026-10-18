@@ -20,8 +20,12 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 - RelayTV services are registered from `services.yaml`:
   - `smart_url`
   - `play_now`
+  - `enqueue`
+  - `clear_queue`
   - `announce`
   - `play_temporary`
+  - `cancel_temporary`
+  - `jump_to_live`
   - `overlay`
   - `play_synced`
   - `snapshot`
@@ -49,12 +53,15 @@ This integration provides a RelayTV `media_player` entity, RelayTV service actio
 
 ## Notes
 
-- `smart_url` uses RelayTV `POST /smart`, which enqueues while already playing and otherwise starts playback immediately.
-- `play_now` and `announce` currently target RelayTV `POST /play`.
-- RelayTV also exposes `POST /play_now`, but this integration does not currently use its preserve-current behavior.
+- `smart_url` uses RelayTV `POST /smart`, which enqueues while already playing and otherwise starts playback immediately (including finite YouTube playlist auto-import via `playlist_mode`).
+- `play_now` defaults to RelayTV `POST /play` (clears queue), and uses `POST /play_now` when `preserve_current`, `preserve_to`, `resume_current`, or `playlist_mode` options are specified. The supported `preserve_to` value is `queue_front`.
+- `enqueue` appends through RelayTV `POST /enqueue`; `position: next` then moves the new item to the front by its stable queue ID. Playlist imports require `position: end`; use `playlist_mode: video` to select one video from a playlist link for next.
+- `clear_queue` targets RelayTV `POST /clear`.
+- Standard Home Assistant `media_player.play_media` (including `enqueue` and `announce`) and `media_player.clear_playlist` are supported natively.
+- Local `media-source://` files honor announcement and enqueue options. Announcements use temporary playback so the previous media resumes afterward.
 - Upload services target RelayTV `POST /ingest/media`, `POST /ingest/media/play`, and `POST /ingest/media/enqueue`.
 - Upload services accept either a Home Assistant local media source selection or an allowlisted `file_path` visible inside the Home Assistant container.
-- Overlay requires `text` or `image_url`.
+- Overlay requires `text` or `image_url` and supports positions `top-left`, `top-right`, `top-center`, `bottom-left`, and `bottom-right`.
 - Snapshot requires active playback on the RelayTV server.
 - Snapshot responses are normalized to absolute URLs for Home Assistant entity attributes.
 - The integration keeps `/status` as bootstrap/fallback and does not treat either push transport as a replay log.

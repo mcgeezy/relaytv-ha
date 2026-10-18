@@ -71,6 +71,21 @@ async def test_user_flow_rejects_credentialed_url_without_request(hass, aioclien
     assert not aioclient_mock.mock_calls
 
 
+async def test_user_flow_rejects_malformed_port_or_bracketed_host(hass, aioclient_mock) -> None:
+    for invalid_url in ("http://relaytv.local:99999", "[relaytv.local]:8787"):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data={
+                CONF_BASE_URL: invalid_url,
+                CONF_SERVER_NAME: "Living Room",
+            },
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "invalid_base_url"}
+    assert not aioclient_mock.mock_calls
+
+
 async def test_reauth_replaces_rejected_token(hass, aioclient_mock) -> None:
     base_url = "http://relaytv.local:8787"
     entry = MockConfigEntry(

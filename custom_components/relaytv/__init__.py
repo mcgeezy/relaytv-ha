@@ -26,6 +26,7 @@ from .const import (
     CONF_RESUME_POSITIONS,
     CONF_SENSOR_STREAM_MAPPINGS,
     DATA_API,
+    DATA_APP_INFO,
     DATA_COORDINATOR,
     DATA_LAST_SNAPSHOT_URL,
     DATA_PANEL_SETTINGS,
@@ -36,6 +37,10 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     SERVICE_ANNOUNCE,
+    SERVICE_CANCEL_TEMPORARY,
+    SERVICE_CLEAR_QUEUE,
+    SERVICE_ENQUEUE,
+    SERVICE_JUMP_TO_LIVE,
     SERVICE_OVERLAY,
     SERVICE_PLAY_NOW,
     SERVICE_PLAY_SYNCED,
@@ -49,27 +54,14 @@ from .const import (
 )
 from .coordinator import RelayTVCoordinator
 from .relaytv_api import RelayTVApi, RelayTVApiError, RelayTVAuthError
-from .url_utils import canonical_media_key
+from .url_utils import canonical_media_key, normalize_base_url
 
 _LOGGER = logging.getLogger(__name__)
 RUNTIME_STORE_KEY = f"{DOMAIN}_runtime"
 MAX_RESUME_POSITIONS = 500
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-
-def _normalize_base_url(raw: str) -> str:
-    raw = (raw or "").strip()
-    if not raw:
-        return ""
-    if "://" not in raw:
-        raw = f"http://{raw}"
-    parsed = urlparse(raw)
-    if not parsed.netloc:
-        return raw
-    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-    if parsed.query:
-        normalized += f"?{parsed.query}"
-    return normalized
+_normalize_base_url = normalize_base_url
 
 
 def _absolute_url(base_url: str, maybe_url: str | None) -> str | None:
@@ -363,9 +355,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except RelayTVApiError as err:
         raise ConfigEntryNotReady(str(err)) from err
     api.on_auth_failure = _start_reauth
+    try:
+        app_info = await api.get_app_info()
+    except Exception:
+        app_info = {}
     coordinator = RelayTVCoordinator(hass=hass, api=api)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         DATA_API: api,
+        DATA_APP_INFO: app_info,
         DATA_COORDINATOR: coordinator,
         DATA_LAST_SNAPSHOT_URL: None,
         "mapping_unsubs": [],
@@ -430,10 +427,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             store = _get_entry_data(hass, entry_id)
             if not store:
                 continue
-            await store[DATA_API].smart_url(url)
+            await store[DATA_API].smart_url(
+                url,
+                use_ytdlp=call.data.get("use_ytdlp"),
+                cec=call.data.get("cec"),
+                playlist_mode=call.data.get("playlist_mode"),
+            )
             await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_play_now(call: ServiceCall):
+        url = (call.data.get("url") or "").strip()
+        if not url:
+            return
+        preserve_current = call.data.get("preserve_current")
+        preserve_to = call.data.get("preserve_to")
+        resume_current = call.data.get("resume_current")
+        playlist_mode = call.data.get("playlist_mode")
+        use_play_now_endpoint = any(
+            opt is not None for opt in (preserve_current, preserve_to, resume_current, playlist_mode)
+        )
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            if use_play_now_endpoint:
+                await store[DATA_API].play_now(
+                    url=url,
+                    use_ytdlp=call.data.get("use_ytdlp"),
+                    cec=call.data.get("cec"),
+                    preserve_current=preserve_current,
+                    preserve_to=preserve_to,
+                    resume_current=resume_current,
+                    playlist_mode=playlist_mode,
+                )
+            else:
+                await store[DATA_API].play(
+                    url=url,
+                    use_ytdlp=call.data.get("use_ytdlp"),
+                    cec=call.data.get("cec"),
+                )
+            await store[DATA_COORDINATOR].async_request_refresh()
+
+    async def _handle_enqueue(call: ServiceCall):
         url = (call.data.get("url") or "").strip()
         if not url:
             return
@@ -441,7 +476,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             store = _get_entry_data(hass, entry_id)
             if not store:
                 continue
-            await store[DATA_API].play(url=url, use_ytdlp=call.data.get("use_ytdlp"), cec=call.data.get("cec"))
+            await store[DATA_API].enqueue(
+                url=url,
+                position=call.data.get("position"),
+                playlist_mode=call.data.get("playlist_mode"),
+            )
+            await store[DATA_COORDINATOR].async_request_refresh()
+
+    async def _handle_clear_queue(call: ServiceCall):
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].clear_queue()
             await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_announce(call: ServiceCall):
@@ -460,6 +507,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 timeout_sec=call.data.get("timeout"),
                 volume_override=call.data.get("volume"),
             )
+            await store[DATA_COORDINATOR].async_request_refresh()
+
+    async def _handle_cancel_temporary(call: ServiceCall):
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].cancel_temporary_playback()
+            await store[DATA_COORDINATOR].async_request_refresh()
+
+    async def _handle_jump_to_live(call: ServiceCall):
+        for entry_id in _resolve_entry_ids_for_call(hass, call):
+            store = _get_entry_data(hass, entry_id)
+            if not store:
+                continue
+            await store[DATA_API].jump_to_live()
             await store[DATA_COORDINATOR].async_request_refresh()
 
     async def _handle_overlay(call: ServiceCall):
@@ -569,8 +632,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for service_name, handler in (
         (SERVICE_SMART_URL, _handle_smart_url),
         (SERVICE_PLAY_NOW, _handle_play_now),
+        (SERVICE_ENQUEUE, _handle_enqueue),
+        (SERVICE_CLEAR_QUEUE, _handle_clear_queue),
         (SERVICE_ANNOUNCE, _handle_announce),
         (SERVICE_PLAY_TEMPORARY, _handle_play_temporary),
+        (SERVICE_CANCEL_TEMPORARY, _handle_cancel_temporary),
+        (SERVICE_JUMP_TO_LIVE, _handle_jump_to_live),
         (SERVICE_OVERLAY, _handle_overlay),
         (SERVICE_PLAY_SYNCED, _handle_play_synced),
         (SERVICE_SNAPSHOT, _handle_snapshot),
@@ -615,8 +682,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for service_name in (
             SERVICE_SMART_URL,
             SERVICE_PLAY_NOW,
+            SERVICE_ENQUEUE,
+            SERVICE_CLEAR_QUEUE,
             SERVICE_ANNOUNCE,
             SERVICE_PLAY_TEMPORARY,
+            SERVICE_CANCEL_TEMPORARY,
+            SERVICE_JUMP_TO_LIVE,
             SERVICE_OVERLAY,
             SERVICE_PLAY_SYNCED,
             SERVICE_SNAPSHOT,

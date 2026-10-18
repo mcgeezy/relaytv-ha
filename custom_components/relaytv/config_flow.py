@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import urlparse
 
 import voluptuous as vol
 
@@ -27,6 +26,7 @@ from .const import (
     DOMAIN,
 )
 from .relaytv_api import RelayTVApi, RelayTVAuthError, RelayTVConnectionError
+from .url_utils import normalize_base_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,21 +37,7 @@ _PASSWORD_SELECTOR = selector.TextSelector(
     )
 )
 
-
-def _normalize_base_url(raw: str) -> str:
-    """Normalize user input into a URL safe for iframe embedding."""
-    raw = (raw or "").strip()
-    if not raw:
-        return ""
-    if "://" not in raw:
-        raw = f"http://{raw}"
-    parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return ""
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        return ""
-    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-    return normalized
+_normalize_base_url = normalize_base_url
 
 
 def _connection_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
