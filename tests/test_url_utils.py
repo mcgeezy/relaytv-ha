@@ -21,6 +21,24 @@ def test_sanitize_url_strips_emby_jellyfin_plex_and_jwt_auth_keys() -> None:
     assert sanitize_url(value) == "https://media.example/watch?v=1"
 
 
+def test_sanitize_url_redacts_rtsp_userinfo_and_camera_auth_query_keys() -> None:
+    rtsp_url = (
+        "RTSP://admin:s3cr3t@Cam.Local.:554/h264Preview_01_main"
+        "?channel=1&user=admin&username=admin&usr=admin"
+        "&pass=s3cr3t&passwd=s3cr3t&password=s3cr3t&pwd=s3cr3t&subtype=0#live"
+    )
+    rtsps_url = "rtsps://viewer:topsecret@nvr.local:7441/front_door?USER=viewer&PASSWORD=topsecret&stream=main"
+
+    assert sanitize_url(rtsp_url) == "rtsp://cam.local:554/h264Preview_01_main?channel=1&subtype=0"
+    assert sanitize_url(rtsps_url) == "rtsps://nvr.local:7441/front_door?stream=main"
+    assert (
+        canonical_media_key(rtsp_url)
+        == "rtsp://cam.local:554/h264Preview_01_main?channel=1&subtype=0"
+    )
+    assert normalize_base_url("rtsp://cam.local:554") == ""
+    assert normalize_base_url("rtsps://nvr.local:7441") == ""
+
+
 def test_sanitize_url_filters_relative_url_queries() -> None:
     assert sanitize_url("/watch?token=secret&X-Plex-Token=secret&v=123") == "/watch?v=123"
     assert sanitize_url("/thumbs/abc.jpg") == "/thumbs/abc.jpg"
