@@ -188,6 +188,17 @@ data:
   volume: 0.6
 ```
 
+Temporary RTSP camera / doorbell feed (interrupts active playback via `POST /play_temporary` with `timeout_sec: 15` and `resume: true`, then restores what was playing):
+
+```yaml
+service: relaytv.play_temporary
+target:
+  entity_id: media_player.relaytv_living_room
+data:
+  url: rtsp://go2rtc.lan:8554/front_door
+  timeout: 15
+```
+
 Overlay a message on the TV:
 
 ```yaml
