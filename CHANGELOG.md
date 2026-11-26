@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1
+
+- Redact IP camera and NVR credential query parameters (`user`, `username`,
+  `usr`, `pass`, `passwd`, `password`, `pwd`) in addition to embedded userinfo
+  on `rtsp://`, `rtsps://`, and `http(s)://` media URLs, staying in sync with
+  RelayTV server redaction rules.
+- Document a `relaytv.play_temporary` RTSP camera/doorbell interruption example
+  with automatic playback resume.
+
 ## 0.6.0
 
 - Add native `media_player.play_media` support for URLs and local media-source
